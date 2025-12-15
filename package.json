@@ -1,0 +1,19 @@
+{
+  "name": "honeypot",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "main": "src/bot.ts",
+  "scripts": {
+    "start": "bun src/bot.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@discordjs/core": "^2.4.0",
+    "@discordjs/rest": "^2.6.0",
+    "discord-api-types": "^0.38.37"
+  }
+}
