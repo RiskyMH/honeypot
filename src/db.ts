@@ -25,7 +25,8 @@ export async function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (guild_id) REFERENCES honeypot_config(guild_id) ON DELETE CASCADE
     );
   `;
 }
@@ -52,6 +53,10 @@ export async function setConfig(config: HoneypotConfig) {
       admin_channel_id=excluded.admin_channel_id,
       action=excluded.action
   `;
+}
+
+export async function deleteConfig(guild_id: string) {
+  await db`DELETE FROM honeypot_config WHERE guild_id = ${guild_id}`;
 }
 
 export async function logBanEvent(guild_id: string, user_id: string) {
