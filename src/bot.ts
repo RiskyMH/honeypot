@@ -1,4 +1,3 @@
-
 import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
@@ -7,6 +6,7 @@ import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType,
 import { initDb, getConfig, setConfig, logBanEvent, getBanCount, deleteConfig } from "./db";
 import { registerCommands } from "./register-commands";
 import { honeypotWarningMessage } from "./honeypot-warning-message";
+import { addMessageToCache, deleteGuildFromMessages, deleteMessageFromCache, getRecentMessagesForUser } from "./cache-db";
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
@@ -78,16 +78,10 @@ async function postWarning(api: API, channelId: string, applicationId: string, b
   }
 }
 
-const guildChannelIdsCache = new Map<string, Set<string>>();
-client.on(GatewayDispatchEvents.ChannelCreate, async ({ data: guild, api }) => guildChannelIdsCache.delete(guild.id));
-client.on(GatewayDispatchEvents.ChannelDelete, async ({ data: guild, api }) => guildChannelIdsCache.delete(guild.id));
-// client.on(GatewayDispatchEvents.ChannelUpdate, async ({ data: guild, api }) => guildChannelIdsCache.delete(guild.id));
-
 client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
   try {
     await deleteConfig(guild.id);
-    guildChannelIdsCache.delete(guild.id);
-    notChannelIdsCache.clear();
+    await deleteGuildFromMessages(guild.id);
   } catch (err) {
     console.error(`Failed to delete honeypot config for guild ${guild.id}:`, err);
   }
@@ -104,7 +98,6 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
     try {
       if (!channelId) {
         channelId = await findOrCreateHoneypotChannel(api, guild);
-        notChannelIdsCache.clear();
       }
       const bansCount = config ? await getBanCount(guild.id) : 0;
       msgId = config?.honeypot_msg_id || await postWarning(api, channelId, applicationId!, bansCount);
@@ -132,65 +125,53 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
   } catch (err) {
     console.error(`Error with GuildCreate handler: ${err}`);
   }
-  guildChannelIdsCache.delete(guild.id);
 });
 
-const textLikeChannels = [
-  ChannelType.GuildText,
-  ChannelType.GuildVoice,
-  ChannelType.GuildAnnouncement,
-  ChannelType.AnnouncementThread,
-  ChannelType.PublicThread,
-  ChannelType.PrivateThread,
-  ChannelType.GuildStageVoice,
-  // ChannelType.GuildForum,
-  // ChannelType.GuildMedia,
-] as const;
-
-async function getTextChannelIds(api: API, guildId: string): Promise<Set<string>> {
-  if (guildChannelIdsCache.has(guildId)) {
-    return guildChannelIdsCache.get(guildId)!;
-  }
-  const channels = await api.guilds.getChannels(guildId);
-  const textChannelIds = new Set(
-    channels.filter(c => textLikeChannels.includes(c.type as any)).map(c => c.id)
-  );
-  guildChannelIdsCache.set(guildId, textChannelIds);
-  return textChannelIds;
-}
 
 async function deleteRecentUserMessagesFromAllChannels(api: API, guildId: string, userId: string) {
-  const channelIds = await getTextChannelIds(api, guildId);
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  for (const channelId of channelIds) {
+  const cachedMessages = await getRecentMessagesForUser(guildId, userId, oneHourAgo);
+
+  const channelMap = new Map<string, string[]>();
+  for (const msg of cachedMessages) {
+    if (!channelMap.has(msg.channel_id)) channelMap.set(msg.channel_id, []);
+    channelMap.get(msg.channel_id)!.push(msg.message_id);
+  }
+  for (const [channelId, ids] of channelMap.entries()) {
     try {
-      const messages = await api.channels.getMessages(channelId, { limit: 100 });
-      const userMsgs = Array.isArray(messages)
-        ? messages.filter(m => m.author?.id === userId && new Date(m.timestamp).getTime() >= oneHourAgo)
-        : [];
-      if (userMsgs.length === 1) {
-        await api.channels.deleteMessage(channelId, userMsgs[0]!.id, { reason: "Honeypot triggered: single user message" });
-      } else if (userMsgs.length > 1) {
-        const ids = userMsgs.map(m => m.id);
-        await api.channels.bulkDeleteMessages(channelId, ids, { reason: "Honeypot triggered: multiple user messages" });
+      if (ids.length === 1 && ids[0]) {
+        await api.channels.deleteMessage(channelId, ids[0], { reason: "Honeypot triggered (deleting last 1hr of messages)" });
+      } else if (ids.length > 1) {
+        await api.channels.bulkDeleteMessages(channelId, ids, { reason: "Honeypot triggered (deleting last 1hr of messages)" });
       }
     } catch (err) {
       // Ignore errors (e.g., missing permissions, channel deleted, etc.)
     }
   }
 }
-const notChannelIdsCache = new Set<string>();
+
+client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) => deleteMessageFromCache(message.id));
+
 client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) => {
   try {
     if (!message.guild_id || message.author.bot) return;
-    if (notChannelIdsCache.has(message.channel_id)) return;
 
     const config = await getConfig(message.guild_id);
     if (!config || !config.action || config.action === 'disabled') {
       return;
     }
+
+    if (["kick", "timeout"].includes(config.action)) {
+      await addMessageToCache({
+        guild_id: message.guild_id,
+        channel_id: message.channel_id,
+        message_id: message.id,
+        user_id: message.author.id,
+        timestamp: new Date(message.timestamp).getTime(),
+      });
+    }
+
     if (message.channel_id !== config.honeypot_channel_id) {
-      notChannelIdsCache.add(message.channel_id);
       return;
     }
 
@@ -217,7 +198,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
         } else if (config.action === 'kick') {
           await api.guilds.removeMember(message.guild_id, message.author.id, { reason: "Triggered honeypot" });
         }
-        await Bun.sleep(1000); // slight delay to ensure all messages are findable
+        await Bun.sleep(1000); // slight delay to ensure all messages are present
         await deleteRecentUserMessagesFromAllChannels(api, message.guild_id, message.author.id);
       } else {
         console.error("Unknown action in honeypot config:", config.action);
@@ -269,7 +250,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
     let config = await getConfig(guildId);
     const originalChannelId = config?.honeypot_channel_id;
-    const originalMsgId = config?.honeypot_msg_id;
+    const originalAdminChannelId = config?.admin_channel_id;
     if (!config) {
       config = {
         guild_id: guildId,
@@ -280,14 +261,12 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       };
     }
     let updated = false;
-    let channelEdited = false;
+
     const options = (interaction.data as APIChatInputApplicationCommandInteraction["data"]).options as APIApplicationCommandInteractionDataOption[] | undefined;
     for (const opt of options ?? []) {
       if (opt.name === "channel" && "value" in opt && opt.value) {
         config.honeypot_channel_id = opt.value as string;
         updated = true;
-        channelEdited = true;
-        notChannelIdsCache.clear();
       }
       if (opt.name === "admin_channel" && "value" in opt && opt.value) {
         config.admin_channel_id = opt.value as string;
@@ -344,7 +323,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       }
 
       await setConfig(config);
-      if (config.admin_channel_id !== originalChannelId && config.admin_channel_id) {
+      if (config.admin_channel_id !== originalAdminChannelId && config.admin_channel_id) {
         try {
           await api.channels.createMessage(config.admin_channel_id, {
             content: `✅ Honeypot is set up in <#${config.honeypot_channel_id}>!`,
@@ -359,12 +338,12 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         }
       }
       await api.interactions.reply(interaction.id, interaction.token, {
-        content: "Honeypot config updated!",
+        content: `Honeypot config updated!\n-# * Channel: <#${config.honeypot_channel_id}>\n-# * Admin Channel: ${config.admin_channel_id ? `<#${config.admin_channel_id}>` : '*(Not set)*'}\n-# * Action: ${config.action}`,
         allowed_mentions: {}
       });
     } else {
       await api.interactions.reply(interaction.id, interaction.token, {
-        content: "No changes made.",
+        content: `No changes made.\n-# * Channel: <#${config.honeypot_channel_id}>\n-# * Admin Channel: ${config.admin_channel_id ? `<#${config.admin_channel_id}>` : '*(Not set)*'}\n-# * Action: ${config.action}`,
         flags: MessageFlags.Ephemeral,
         allowed_mentions: {}
       });
