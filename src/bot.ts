@@ -2,7 +2,7 @@ import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIChatInputApplicationCommandInteraction, APIApplicationCommandInteractionDataOption, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
-import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags } from "discord-api-types/v10";
+import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logBanEvent, getBanCount, deleteConfig } from "./db";
 import { registerCommands } from "./register-commands";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
@@ -376,6 +376,23 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
   applicationId = c.data.user.id;
 
   registerCommands(c.api, c.data.user.id);
+
+  client.gateway.send(c.shardId, {
+    op: GatewayOpcodes.PresenceUpdate,
+    d: {
+      since: null,
+      activities: [
+        {
+          name: "#honeypot",
+          state: "Watching #honeypot for bots",
+          type: ActivityType.Custom,
+        }
+      ],
+      status: PresenceUpdateStatus.Online,
+      afk: false,
+    }
+  });
+
 });
 
 gateway.connect();
