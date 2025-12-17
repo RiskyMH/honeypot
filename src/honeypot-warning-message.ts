@@ -52,3 +52,37 @@ export function honeypotWarningMessage(
     ]
   };
 }
+
+export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string): RESTPostAPIChannelMessageJSONBody {
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    allowed_mentions: {},
+    components: [
+      {
+        type: ComponentType.Container,
+        accent_color: 0xFFD700,
+        components: [
+          {
+            type: ComponentType.Section,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
+              },
+              {
+                type: ComponentType.TextDisplay,
+                content: `-# This is an automated message. Replies are not monitored.`
+              },
+            ],
+            accessory: {
+              type: ComponentType.Thumbnail,
+              media: {
+                url: "https://raw.githubusercontent.com/microsoft/fluentui-emoji/refs/heads/main/assets/Honey%20pot/3D/honey_pot_3d.png"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  };
+}

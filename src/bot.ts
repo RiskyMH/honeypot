@@ -5,7 +5,7 @@ import type { APIChatInputApplicationCommandInteraction, APIApplicationCommandIn
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logBanEvent, getBanCount, deleteConfig } from "./db";
 import { registerCommands } from "./register-commands";
-import { honeypotWarningMessage } from "./honeypot-warning-message";
+import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
 import { addMessageToCache, deleteGuildFromMessages, deleteMessageFromCache, getRecentMessagesForUser } from "./cache-db";
 
 const token = process.env.DISCORD_TOKEN;
@@ -175,6 +175,20 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
       return;
     }
 
+    let actionText = config.action === 'ban' ? 'banned' : config.action === 'timeout' ? 'timed out for 24 hours' : 'kicked';
+
+    // should DM user first before banning so that discord has less reason to block it
+    try {
+      let guildName = `this server`;
+      const guild = await api.guilds.get(message.guild_id).catch(() => null);
+      if (guild && guild.name) guildName = `**${guild.name}**`;
+      const link = `https://discord.com/channels/${message.guild_id}/${message.channel_id}/${message.id}`;
+      const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link);
+      await api.users.createDM(message.author.id).then((dm) =>
+        api.channels.createMessage(dm.id, dmContent)
+      );
+    } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
+
     let failed = false;
     try {
       if (config.action === 'ban') {
@@ -217,22 +231,25 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
       );
     } catch (err) { console.error(`Failed to update honeypot message: ${err}`); }
 
-    if (config.admin_channel_id) {
-      const actionText = config.action === 'ban' ? 'banned' : 'timed out for 24 hours';
-      if (!failed) {
-        await api.channels.createMessage(config.admin_channel_id, {
-          content: `User <@${message.author.id}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
-          allowed_mentions: {}
-        });
-      } else {
-        await api.channels.createMessage(config.admin_channel_id, {
-          content: `⚠️ User <@${message.author.id}> triggered the honeypot in <#${config.honeypot_channel_id}>, but I **failed** to ${config.action === 'ban' ? 'ban' : 'timeout'} them. Please check my permissions.`,
-          allowed_mentions: {}
-        });
-      }
+    if (config.admin_channel_id && !failed) {
+      const actionText = {
+        ban: 'banned',
+        timeout: 'timed out',
+        kick: 'kicked',
+        disabled: 'disabled'
+      }[config.action] || 'banned';
+      await api.channels.createMessage(config.admin_channel_id, {
+        content: `User <@${message.author.id}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
+        allowed_mentions: {}
+      });
     } else if (failed) {
-      await api.channels.createMessage(config.honeypot_channel_id, {
-        content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action === 'ban' ? 'ban' : 'timeout'} them. Please check my permissions.`,
+      const roleReqs = {
+        ban: "`Ban Members` permission",
+        timeout: "`Moderate Members` & `Manage Messages` permission",
+        kick: "`Kick Members` & `Manage Messages` permission",
+      }[config.action] || "appropriate permissions";
+      await api.channels.createMessage(config.admin_channel_id || config.honeypot_channel_id, {
+        content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to ensure I have ${roleReqs} and my role higher than the member's highest role.`,
         allowed_mentions: {}
       });
     }
@@ -273,10 +290,11 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         updated = true;
       }
       if (opt.name === "action" && "value" in opt) {
-        if (opt.value === 'timeout') config.action = 'timeout';
-        else if (opt.value === 'disabled') config.action = 'disabled';
-        else if (opt.value === 'kick') config.action = 'kick';
-        else config.action = 'ban';
+        if (typeof opt.value === "string" && ["ban", "timeout", "disabled", "kick"].includes(opt.value)) {
+          config.action = opt.value as any;
+        } else {
+          config.action = 'ban';
+        }
         updated = true;
       }
     }
