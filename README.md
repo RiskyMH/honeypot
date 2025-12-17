@@ -7,14 +7,16 @@
   Honeypot Discord Bot
 </h1>
 
-> A Discord bot to automatically catch and ban spam bots by monitoring a dedicated "honeypot" channel.
+> A Discord bot to automatically catch and remove spam bots by monitoring a dedicated "#honeypot" channel.
 
 ## Usage
 
-1. [**Invite the bot**](https://discord.com/oauth2/authorize?client_id=1450060292716494940) to your server with appropriate permissions (Manage Channels, Ban Members, etc).
+1. [**Invite the bot**](https://discord.com/oauth2/authorize?client_id=1450060292716494940) to your server with appropriate permissions (Ban Members, Manage Channels, etc).
 2. The bot will create a `#honeypot` channel on join, or you can set it up with `/honeypot`.
-3. Configure the admin log channel and action (ban/timeout/kick/disabled) using the `/honeypot` command.
-4. Any user posting in the honeypot channel will be banned or timed out, and the action will be logged.
+3. Configure the admin log channel and action (kick or ban) using the `/honeypot` command.
+4. Any user posting in the honeypot channel will be banned or removed, and the action will be logged.
+
+> **Note:** Kick is default and uses bans & unbans to make Discord delete their messages 
 
 ## Getting Started (dev)
 

@@ -16,7 +16,7 @@ export async function registerCommands(api: API, applicationId: string) {
           required: false,
         },
         {
-          name: "admin_channel",
+          name: "log_channel",
           description: "Set admin log channel",
           type: ApplicationCommandOptionType.Channel,
           channel_types: [ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.GuildVoice],
@@ -24,13 +24,12 @@ export async function registerCommands(api: API, applicationId: string) {
         },
         {
           name: "action",
-          description: "Action to take on trigger (all except disabled delete their last hour of messages)",
+          description: "Action to take on message sent in #honeypot channel",
           type: ApplicationCommandOptionType.String,
           required: false,
           choices: [
-            { name: "Ban (permanent, delete last 1hr msgs)", value: "ban" },
-            { name: "Timeout (for 24h, delete last 1hr msgs)", value: "timeout" },
-            { name: "Kick (delete last 1hr msgs)", value: "kick" },
+            { name: "Kick (ban & unban, deletes last 1hr msgs)", value: "kick" },
+            { name: "Ban (permanent, deletes last 1hr msgs)", value: "ban" },
             { name: "Disabled", value: "disabled" }
           ]
         },

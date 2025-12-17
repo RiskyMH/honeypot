@@ -1,13 +1,12 @@
 import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, ButtonStyle } from "discord-api-types/v10";
 
 export function honeypotWarningMessage(
-  bansCount: number = 0,
-  action: 'ban' | 'timeout' | 'kick' | 'disabled' = 'ban'
+  moderatedCount: number = 0,
+  action: 'ban' | 'kick' | 'disabled' = 'kick'
 ): RESTPostAPIChannelMessageJSONBody {
   const actionTextMap = {
     ban: { text: 'an immediate ban', label: 'Bans' },
-    timeout: { text: 'a 24h timeout and message deletion', label: 'Timeouts' },
-    kick: { text: 'an immediate kick and message deletion', label: 'Kicks' },
+    kick: { text: 'an immediate kick', label: 'Kicks' },
     disabled: { text: 'no action (honeypot is disabled)', label: 'Triggers' }
   };
   const { text: actionText, label: labelText } = actionTextMap[action] || actionTextMap.ban!;
@@ -40,8 +39,8 @@ export function honeypotWarningMessage(
               {
                 type: ComponentType.Button,
                 style: ButtonStyle.Secondary,
-                label: `${labelText}: ${bansCount}`,
-                custom_id: "bans_count",
+                label: `${labelText}: ${moderatedCount}`,
+                custom_id: "moderated_count_button",
                 disabled: true,
                 emoji: { name: "🍯" }
               }
