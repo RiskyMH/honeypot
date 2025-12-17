@@ -340,16 +340,15 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         }
       }
 
-      await setConfig(config);
       if (config.admin_channel_id !== originalAdminChannelId && config.admin_channel_id) {
         try {
           await api.channels.createMessage(config.admin_channel_id, {
-            content: `✅ Honeypot is set up in <#${config.honeypot_channel_id}>!`,
+            content: `Honeypot is set up in <#${config.honeypot_channel_id}>!`,
             allowed_mentions: {}
           });
         } catch {
           await api.interactions.reply(interaction.id, interaction.token, {
-            content: "Honeypot config updated, but I couldn't notify the admin channel. Please check my permissions.",
+            content: "There was a problem sending test message to the admin channel. Please check my permissions and try again.",
             allowed_mentions: {}
           });
           return;
@@ -366,6 +365,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         allowed_mentions: {}
       });
     }
+    await setConfig(config);
   } catch (err) {
     console.error(`Error with InteractionCreate handler: ${err}`);
   }
