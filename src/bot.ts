@@ -1,10 +1,9 @@
 import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
-import type { APIChatInputApplicationCommandInteraction, APIApplicationCommandInteractionDataOption, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
-import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig } from "./db";
-import { registerCommands } from "./register-commands";
+import type { APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
+import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits } from "discord-api-types/v10";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
 
 const token = process.env.DISCORD_TOKEN;
@@ -226,123 +225,209 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 });
 
 client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, api }) => {
-  try {
-    if (interaction.type !== InteractionType.ApplicationCommand) return;
-    if (interaction.data.name !== "honeypot") return;
-    const guildId = (interaction as APIChatInputApplicationCommandInteraction).guild_id;
-    if (!guildId) return;
+  const guildId = interaction.guild_id;
+  if (!guildId) return;
 
-    let config = await getConfig(guildId);
-    const originalChannelId = config?.honeypot_channel_id;
-    const originalLogChannelId = config?.log_channel_id;
-    if (!config) {
-      config = {
+  try {
+    // slash command handler: show modal
+    if (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
+      let config = await getConfig(guildId);
+      if (!config) {
+        config = {
+          guild_id: guildId,
+          honeypot_channel_id: "",
+          honeypot_msg_id: null,
+          log_channel_id: null,
+          action: 'kick',
+        };
+      }
+
+      const modal: APIModalInteractionResponseCallbackData = {
+        title: "Honeypot",
+        custom_id: `honeypot_config_modal`,
+        components: [
+          {
+            type: ComponentType.Label,
+            label: "Honeypot Channel",
+            description: "Any message sent in this channel will cause the author to be kicked/banned from server",
+            component: {
+              type: ComponentType.ChannelSelect,
+              custom_id: "honeypot_channel",
+              min_values: 1,
+              max_values: 1,
+              placeholder: "#honeypot",
+              channel_types: [ChannelType.GuildText],
+              default_values: config.honeypot_channel_id ? [{ id: config.honeypot_channel_id, type: SelectMenuDefaultValueType.Channel }] : [],
+              required: true,
+            }
+          },
+          {
+            type: ComponentType.Label,
+            label: "Log Channel",
+            description: "The channel to log events (ie kicks/bans that the bot actioned)",
+            component: {
+              type: ComponentType.ChannelSelect,
+              custom_id: "log_channel",
+              min_values: 0,
+              max_values: 1,
+              placeholder: "#mod-log",
+              channel_types: [ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread],
+              default_values: config.log_channel_id ? [{ id: config.log_channel_id, type: SelectMenuDefaultValueType.Channel }] : [],
+              required: false,
+            }
+          },
+          {
+            type: ComponentType.Label,
+            label: "Action",
+            description: "What should the bot do to message author?",
+            component: {
+              type: ComponentType.StringSelect,
+              custom_id: "honeypot_action",
+              placeholder: "Kick",
+              options: [
+                { label: "Kick", value: "kick", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "kick" },
+                { label: "Ban", value: "ban", description: "Permanently bans the user to also delete last 1hr of messages", default: config.action === "ban" },
+                { label: "Disabled", value: "disabled", description: "Don't do anything", default: config.action === "disabled" }
+              ],
+              min_values: 1,
+              max_values: 1,
+              required: true,
+            }
+          }
+        ]
+      };
+      await api.interactions.createModal(interaction.id, interaction.token, modal);
+      return;
+    }
+
+    // modal submit handler: update config from modal values
+    else if (interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal`) {
+      const newConfig: HoneypotConfig = {
         guild_id: guildId,
         honeypot_channel_id: "",
         honeypot_msg_id: null,
         log_channel_id: null,
         action: 'kick',
-      };
-    }
-    let updated = false;
+      }
 
-    const options = (interaction.data as APIChatInputApplicationCommandInteraction["data"]).options as APIApplicationCommandInteractionDataOption[] | undefined;
-    for (const opt of options ?? []) {
-      if (opt.name === "channel" && "value" in opt && opt.value) {
-        config.honeypot_channel_id = opt.value as string;
-        updated = true;
-      }
-      if (opt.name === "log_channel" && "value" in opt && opt.value) {
-        config.log_channel_id = opt.value as string;
-        updated = true;
-      }
-      if (opt.name === "action" && "value" in opt) {
-        if (typeof opt.value === "string" && ["ban", "disabled", "kick"].includes(opt.value)) {
-          config.action = opt.value as any;
-        } else {
-          config.action = 'kick';
+      for (const label of interaction.data.components) {
+        const c = (label as any).component ?? label;
+        if (!c) continue;
+        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.honeypot_channel_id = c.values[0];
+        if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0];
+        if (c.custom_id === "honeypot_action" && Array.isArray(c.values) && c.values.length > 0) {
+          if (["kick", "ban", "disabled"].includes(c.values[0])) newConfig.action = c.values[0] as any;
         }
-        updated = true;
       }
-    }
 
-    let currentHoneypotMsgIsValid = false;
-    if (config.honeypot_msg_id) {
-      const msg = await api.channels.getMessage(config.honeypot_channel_id, config.honeypot_msg_id).catch(() => null);
-      if (msg?.id) {
-        currentHoneypotMsgIsValid = true;
-      }
-    }
+      const prevConfig = await getConfig(guildId);
+      const honeypotChanged = newConfig.honeypot_channel_id !== prevConfig?.honeypot_channel_id;
+      const logChanged = newConfig.log_channel_id !== prevConfig?.log_channel_id;
 
-    if (updated) {
-      if (config.honeypot_channel_id !== originalChannelId || currentHoneypotMsgIsValid === false) {
+      // if honeypot channel changed or current honeypot msg is invalid, create new honeypot message
+      // otherwise try to edit it with latest data
+      // but if either fail, then let user know its broken sadly
+      let msgId: string | null = null;
+      try {
         const count = await getModeratedCount(guildId);
-        try {
+        const messageBody = honeypotWarningMessage(count, newConfig.action);
+        if (honeypotChanged) {
           const msg = await api.channels.createMessage(
-            config.honeypot_channel_id,
-            honeypotWarningMessage(count, config.action)
+            newConfig.honeypot_channel_id,
+            messageBody
           );
-          config.honeypot_msg_id = msg.id;
-        } catch (err) {
-          await api.interactions.reply(interaction.id, interaction.token, {
-            content: "There was a problem setting up the honeypot channel. Please check my permissions and try again.",
-            allowed_mentions: {}
-          });
-          return;
+          msgId = msg.id;
+        } else if (prevConfig?.honeypot_msg_id) {
+          try {
+            await api.channels.editMessage(
+              newConfig.honeypot_channel_id,
+              prevConfig.honeypot_msg_id,
+              messageBody
+            );
+          } catch {
+            const msg = await api.channels.createMessage(
+              newConfig.honeypot_channel_id,
+              messageBody
+            );
+            msgId = msg.id;
+          }
+        } else {
+          console.error("No previous honeypot message ID found to edit.");
         }
-      } else if (config.honeypot_msg_id) {
-        const count = await getModeratedCount(guildId);
-        try {
-          await api.channels.editMessage(
-            config.honeypot_channel_id,
-            config.honeypot_msg_id,
-            honeypotWarningMessage(count, config.action)
-          );
-        } catch (err) {
-          await api.interactions.reply(interaction.id, interaction.token, {
-            content: "There was a problem setting up the honeypot channel. Please check my permissions and try again.",
-            allowed_mentions: {}
-          });
-          return;
-        }
+      } catch (err) {
+        await api.interactions.reply(interaction.id, interaction.token, {
+          content: `There was a problem setting up the honeypot channel to <#${newConfig.honeypot_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
+          allowed_mentions: {},
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
       }
 
-      if (config.log_channel_id !== originalLogChannelId && config.log_channel_id) {
+
+      if (logChanged && newConfig.log_channel_id) {
         try {
-          await api.channels.createMessage(config.log_channel_id, {
-            content: `Honeypot is set up in <#${config.honeypot_channel_id}>! This channel will log honeypot events.`,
-            allowed_mentions: {}
+          await api.channels.createMessage(newConfig.log_channel_id, {
+            content: `Honeypot is set up in <#${newConfig.honeypot_channel_id}>! This current channel will log honeypot events.`,
+            allowed_mentions: {},
           });
         } catch {
+          // clean up just created honeypot message if log channel fails (because user might think it's fully set up otherwise)
+          if (msgId) {
+            await api.channels.deleteMessage(newConfig.honeypot_channel_id, msgId, { reason: "Cleaning up honeypot message after log channel setup failure" }).catch(() => null);
+          }
+
           await api.interactions.reply(interaction.id, interaction.token, {
-            content: "There was a problem sending test message to the log channel. Please check my permissions and try again.",
-            allowed_mentions: {}
+            content: `There was a problem sending test message to the log channel <#${newConfig.log_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
+            flags: MessageFlags.Ephemeral,
+            allowed_mentions: {},
           });
           return;
         }
       }
-      await api.interactions.reply(interaction.id, interaction.token, {
-        content: `Honeypot config updated!\n-# * Channel: <#${config.honeypot_channel_id}>\n-# * Log Channel: ${config.log_channel_id ? `<#${config.log_channel_id}>` : '*(Not set)*'}\n-# * Action: ${config.action}`,
-        allowed_mentions: {}
+
+      if (msgId && prevConfig?.honeypot_msg_id) {
+        await api.channels.deleteMessage(
+          prevConfig.honeypot_channel_id,
+          prevConfig.honeypot_msg_id,
+          { reason: "Honeypot channel changed, so cleaning up old honeypot message" }
+        ).catch(() => null);
+      }
+
+      await setConfig({
+        ...(prevConfig || {}),
+        ...newConfig,
+        honeypot_msg_id: msgId || newConfig.honeypot_msg_id || prevConfig?.honeypot_msg_id || null,
       });
-    } else {
       await api.interactions.reply(interaction.id, interaction.token, {
-        content: `No changes made.\n-# * Channel: <#${config.honeypot_channel_id}>\n-# * Log Channel: ${config.log_channel_id ? `<#${config.log_channel_id}>` : '*(Not set)*'}\n-# * Action: ${config.action}`,
-        flags: MessageFlags.Ephemeral,
-        allowed_mentions: {}
+        content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: ${newConfig.action}`,
+        allowed_mentions: {},
       });
+      return;
     }
-    await setConfig(config);
+
+    return;
   } catch (err) {
-    console.error(`Error with InteractionCreate handler: ${err}`);
+    console.error("Error with InteractionCreate handler:", err);
   }
 });
+
 
 client.once(GatewayDispatchEvents.Ready, (c) => {
   console.log(`${c.data.user.username}#${c.data.user.discriminator} is ready!`);
   applicationId = c.data.user.id;
 
-  registerCommands(c.api, c.data.user.id);
+  c.api.applicationCommands.bulkOverwriteGlobalCommands(c.data.user.id, [
+    {
+      // this command opens a modal for configuring the honeypot
+      name: "honeypot",
+      description: "Configure honeypot settings",
+      type: ApplicationCommandType.ChatInput,
+      options: [],
+      default_member_permissions: PermissionFlagsBits.Administrator.toString(),
+      integration_types: [ApplicationIntegrationType.GuildInstall],
+      contexts: [InteractionContextType.Guild],
+    },
+  ]);
 
   client.gateway.send(c.shardId, {
     op: GatewayOpcodes.PresenceUpdate,
