@@ -1,7 +1,7 @@
 import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
-import type { APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
+import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
@@ -148,13 +148,14 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     }[config.action] || '???unknown action???';
 
     // should DM user first before banning so that discord has less reason to block it
+    let dmMessage: APIMessage | null = null;
     try {
       let guildName = `this server`;
       const guild = await api.guilds.get(message.guild_id).catch(() => null);
       if (guild && guild.name) guildName = `**${guild.name}**`;
       const link = `https://discord.com/channels/${message.guild_id}/${message.channel_id}/${message.id}`;
       const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link);
-      await api.users.createDM(message.author.id).then((dm) =>
+      dmMessage = await api.users.createDM(message.author.id).then((dm) =>
         api.channels.createMessage(dm.id, dmContent)
       );
     } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
@@ -188,7 +189,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     } catch (err) {
       failed = true;
     }
-    await logModerateEvent(message.guild_id, message.author.id);
+    if (!failed) await logModerateEvent(message.guild_id, message.author.id);
 
     if (config.honeypot_msg_id) try {
       const moderatedCount = await getModeratedCount(message.guild_id);
