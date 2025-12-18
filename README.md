@@ -14,8 +14,8 @@
 1. [**Invite the bot**](https://discord.com/oauth2/authorize?client_id=1450060292716494940) to your server with appropriate permissions (Ban Members, Manage Channels, etc).
 2. The bot will create a `#honeypot` channel on join, or you can set it up with `/honeypot`.
 3. Configure the admin log channel and action (kick or ban) using the `/honeypot` command.
-4. Any user posting in the honeypot channel will be banned or removed, and the action will be logged.
-
+4. Ensure the bot’s highest role is above any self-assignable (color/ping) roles.
+5. Any user posting in the honeypot channel will be banned or removed, and the action will be logged.
 > **Note:** Kick is default and is a softban (bans & unbans) so Discord deletes their immediate messages 
 
 ## Getting Started (dev)

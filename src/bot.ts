@@ -208,11 +208,11 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
         });
       } else if (failed) {
         const roleReqs = {
-          ban: "`Ban Members` permission",
-          kick: "`Ban Members` permission (to softban)",
+          ban: "**ban members** permission",
+          kick: "**ban members** permission (to softban)",
         }[config.action] || "appropriate permissions";
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
-          content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to ensure I have ${roleReqs} and that my role higher than their highest role.`,
+          content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have ${roleReqs}.`,
           allowed_mentions: {},
         });
       }
