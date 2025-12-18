@@ -175,12 +175,12 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
           message.guild_id,
           message.author.id,
           { delete_message_seconds: 3600 },
-          { reason: "Triggered honeypot -> kick" }
+          { reason: "Triggered honeypot -> softban (kick)" }
         );
         await api.guilds.unbanUser(
           message.guild_id,
           message.author.id,
-          { reason: "Triggered honeypot -> kick" }
+          { reason: "Triggered honeypot -> softban (kick)" }
         );
       } else {
         console.error("Unknown action in honeypot config:", config.action);
@@ -208,7 +208,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
       } else if (failed) {
         const roleReqs = {
           ban: "`Ban Members` permission",
-          kick: "`Ban Members` permission (to ban & unban)",
+          kick: "`Ban Members` permission (to softban)",
         }[config.action] || "appropriate permissions";
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
           content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to ensure I have ${roleReqs} and that my role higher than their highest role.`,
@@ -283,9 +283,9 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
             component: {
               type: ComponentType.StringSelect,
               custom_id: "honeypot_action",
-              placeholder: "Kick",
+              placeholder: "Softban (kick)",
               options: [
-                { label: "Kick", value: "kick", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "kick" },
+                { label: "Softban (kick)", value: "kick", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "kick" },
                 { label: "Ban", value: "ban", description: "Permanently bans the user to also delete last 1hr of messages", default: config.action === "ban" },
                 { label: "Disabled", value: "disabled", description: "Don't do anything", default: config.action === "disabled" }
               ],

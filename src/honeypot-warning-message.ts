@@ -6,7 +6,7 @@ export function honeypotWarningMessage(
 ): RESTPostAPIChannelMessageJSONBody {
   const actionTextMap = {
     ban: { text: 'an immediate ban', label: 'Bans' },
-    kick: { text: 'an immediate kick', label: 'Kicks' },
+    kick: { text: 'a softban', label: 'Kicks' },
     disabled: { text: 'no action (honeypot is disabled)', label: 'Triggers' }
   };
   const { text: actionText, label: labelText } = actionTextMap[action] || actionTextMap.ban!;

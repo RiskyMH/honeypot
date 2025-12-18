@@ -16,7 +16,7 @@
 3. Configure the admin log channel and action (kick or ban) using the `/honeypot` command.
 4. Any user posting in the honeypot channel will be banned or removed, and the action will be logged.
 
-> **Note:** Kick is default and uses bans & unbans to make Discord delete their messages 
+> **Note:** Kick is default and is a softban (bans & unbans) so Discord deletes their immediate messages 
 
 ## Getting Started (dev)
 
