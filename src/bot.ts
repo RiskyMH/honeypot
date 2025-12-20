@@ -79,9 +79,14 @@ async function postWarning(api: API, channelId: string, applicationId: string, m
 client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
   try {
     await deleteConfig(guild.id);
+    guildCache.delete(guild.id);
   } catch (err) {
     console.error(`Failed to delete honeypot config for guild ${guild.id}:`, err);
   }
+});
+
+client.on(GatewayDispatchEvents.GuildUpdate, async ({ data: guild }) => {
+  guildCache.delete(guild.id);
 });
 
 client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
@@ -145,6 +150,15 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 //   }, api);
 // });
 
+const guildCache = new Map<string, { name: string, ownerId: string }>();
+const getGuildInfo = async (api: API, guildId: string) => {
+  if (guildCache.has(guildId)) return guildCache.get(guildId)!;
+  const guild = await api.guilds.get(guildId);
+  const info = { name: guild.name, ownerId: guild.owner_id };
+  guildCache.set(guildId, info);
+  return info;
+};
+
 const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string }, api: API) => {
   try {
     const config = await getConfig(guildId);
@@ -169,19 +183,23 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
     // should DM user first before banning so that discord has less reason to block it
     let dmMessage: APIMessage | null = null;
+    let isOwner = false;
     try {
       let guildName = `this server`;
-      const guild = await api.guilds.get(guildId).catch(() => null);
-      if (guild && guild.name) guildName = `**${guild.name}**`;
+      let guild = await getGuildInfo(api, guildId).catch(() => null);
+      if (guild) {
+        guildName = `**${guild.name}**`;
+        if (guild.ownerId === userId) isOwner = true;
+      }
       const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
-      const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link);
+      const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
       dmMessage = await api.users.createDM(userId).then((dm) =>
         api.channels.createMessage(dm.id, dmContent)
       );
     } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
 
     let failed = false;
-    try {
+    if (!isOwner) try {
       if (config.action === 'ban') {
         // Ban: permanent ban, delete last 1 hour of messages
         await api.guilds.banUser(
@@ -208,8 +226,11 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       }
     } catch (err) {
       failed = true;
-    }
-    if (!failed) await logModerateEvent(guildId, userId);
+    } else {
+      // server owner cannot be banned/kicked by anyone
+      failed = false
+    };
+    if (!failed && !isOwner) await logModerateEvent(guildId, userId);
 
     if (config.honeypot_msg_id) try {
       const moderatedCount = await getModeratedCount(guildId);
@@ -221,10 +242,15 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     } catch (err) { console.error(`Failed to update honeypot message: ${err}`); }
 
     try {
-      if (config.log_channel_id && !failed) {
+      if (config.log_channel_id && !failed && !isOwner) {
         await api.channels.createMessage(config.log_channel_id, {
           content: `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
           allowed_mentions: {}
+        });
+      } else if (isOwner) {
+        await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
+          content: `⚠️ User <@${userId}> triggered the honeypot, but they are the **server owner** so I cannot ${config.action} them.\n-# In anycase **ensure my role is higher** than people’s highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
+          // allowed_mentions: {},
         });
       } else if (failed) {
         const roleReqs = {

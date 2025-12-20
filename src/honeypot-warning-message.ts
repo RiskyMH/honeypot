@@ -52,7 +52,7 @@ export function honeypotWarningMessage(
   };
 }
 
-export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string): RESTPostAPIChannelMessageJSONBody {
+export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string, isOwner = false): RESTPostAPIChannelMessageJSONBody {
   return {
     flags: MessageFlags.IsComponentsV2,
     allowed_mentions: {},
@@ -81,7 +81,11 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
             }
           }
         ]
-      }
-    ]
+      },
+      isOwner ? {
+        type: ComponentType.TextDisplay,
+        content: `-# This is an example message: as the owner you can’t be ${actionText}.`
+      } : null
+    ].filter(Boolean) as any[],
   };
 }
