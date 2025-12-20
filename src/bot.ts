@@ -125,17 +125,37 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
 });
 
 client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) => {
-  try {
-    if (!message.guild_id || message.author.bot) return;
+  if (!message.guild_id || message.author.bot) return;
+  await onMessage({
+    userId: message.author.id,
+    channelId: message.channel_id,
+    guildId: message.guild_id,
+    messageId: message.id
+  }, api);
+});
 
-    const config = await getConfig(message.guild_id);
+// // looks like threads create a message event anyway, so no need to handle separately
+// client.on(GatewayDispatchEvents.ThreadCreate, async ({ data: thread, api }) => {
+//   if (!thread.guild_id || thread.owner_id === applicationId || !thread.owner_id || !thread.parent_id) return;
+//   await onMessage({
+//     userId: thread.owner_id,
+//     channelId: thread.parent_id,
+//     guildId: thread.guild_id,
+//     threadId: thread.id
+//   }, api);
+// });
+
+const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string }, api: API) => {
+  try {
+    const config = await getConfig(guildId);
     if (!config || !config.action) return;
-    if (message.channel_id !== config.honeypot_channel_id) return;
+    if (channelId !== config.honeypot_channel_id) return;
 
     // just for the fun of it to acknowledge it saw the message
-    api.channels.addMessageReaction(
-      message.channel_id,
-      message.id,
+    let emojiReact = null as null | Promise<any>
+    if (messageId) emojiReact = api.channels.addMessageReaction(
+      channelId,
+      messageId,
       `honeypot:${CUSTOM_EMOJI_ID}`
     ).catch(() => null);
 
@@ -151,11 +171,11 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     let dmMessage: APIMessage | null = null;
     try {
       let guildName = `this server`;
-      const guild = await api.guilds.get(message.guild_id).catch(() => null);
+      const guild = await api.guilds.get(guildId).catch(() => null);
       if (guild && guild.name) guildName = `**${guild.name}**`;
-      const link = `https://discord.com/channels/${message.guild_id}/${message.channel_id}/${message.id}`;
+      const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
       const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link);
-      dmMessage = await api.users.createDM(message.author.id).then((dm) =>
+      dmMessage = await api.users.createDM(userId).then((dm) =>
         api.channels.createMessage(dm.id, dmContent)
       );
     } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
@@ -165,22 +185,22 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
       if (config.action === 'ban') {
         // Ban: permanent ban, delete last 1 hour of messages
         await api.guilds.banUser(
-          message.guild_id,
-          message.author.id,
+          guildId,
+          userId,
           { delete_message_seconds: 3600 },
           { reason: "Triggered honeypot -> ban" }
         );
       } else if (config.action === 'kick') {
         // Kick: kick but via ban/unban, delete last 1 hour of messages
         await api.guilds.banUser(
-          message.guild_id,
-          message.author.id,
+          guildId,
+          userId,
           { delete_message_seconds: 3600 },
           { reason: "Triggered honeypot -> softban (kick)" }
         );
         await api.guilds.unbanUser(
-          message.guild_id,
-          message.author.id,
+          guildId,
+          userId,
           { reason: "Triggered honeypot -> softban (kick)" }
         );
       } else {
@@ -189,10 +209,10 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     } catch (err) {
       failed = true;
     }
-    if (!failed) await logModerateEvent(message.guild_id, message.author.id);
+    if (!failed) await logModerateEvent(guildId, userId);
 
     if (config.honeypot_msg_id) try {
-      const moderatedCount = await getModeratedCount(message.guild_id);
+      const moderatedCount = await getModeratedCount(guildId);
       await api.channels.editMessage(
         config.honeypot_channel_id,
         config.honeypot_msg_id,
@@ -203,7 +223,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     try {
       if (config.log_channel_id && !failed) {
         await api.channels.createMessage(config.log_channel_id, {
-          content: `User <@${message.author.id}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
+          content: `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
           allowed_mentions: {}
         });
       } else if (failed) {
@@ -212,9 +232,10 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
           kick: "**ban members** permission (to softban)",
         }[config.action] || "appropriate permissions";
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
-          content: `⚠️ User <@${message.author.id}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have ${roleReqs}.`,
+          content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have ${roleReqs}.`,
           allowed_mentions: {},
         });
+        await emojiReact;
       }
     } catch (err) {
       // somewhat chance the channel is deleted or the bot lost perms to send messages there
@@ -223,7 +244,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
   } catch (err) {
     console.error(`Error with MessageCreate handler: ${err}`);
   }
-});
+};
 
 client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, api }) => {
   const guildId = interaction.guild_id;
