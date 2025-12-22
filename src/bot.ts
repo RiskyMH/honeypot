@@ -106,7 +106,7 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
     }
     await setConfig({
       guild_id: guild.id,
-      honeypot_channel_id: channelId ?? "",
+      honeypot_channel_id: channelId,
       honeypot_msg_id: msgId,
       log_channel_id: null,
       action: 'kick',
@@ -299,7 +299,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       if (!config) {
         config = {
           guild_id: guildId,
-          honeypot_channel_id: "",
+          honeypot_channel_id: null,
           honeypot_msg_id: null,
           log_channel_id: null,
           action: 'kick',
@@ -368,7 +368,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
     else if (interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal`) {
       const newConfig: HoneypotConfig = {
         guild_id: guildId,
-        honeypot_channel_id: "",
+        honeypot_channel_id: null,
         honeypot_msg_id: null,
         log_channel_id: null,
         action: 'kick',
@@ -382,6 +382,16 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         if (c.custom_id === "honeypot_action" && Array.isArray(c.values) && c.values.length > 0) {
           if (["kick", "ban", "disabled"].includes(c.values[0])) newConfig.action = c.values[0] as any;
         }
+      }
+
+      // shouldn't happen, but just in case
+      if (!newConfig.honeypot_channel_id) {
+        await api.interactions.reply(interaction.id, interaction.token, {
+          content: `Honeypot channel is required! No changes have been made.`,
+          allowed_mentions: {},
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
       }
 
       const prevConfig = await getConfig(guildId);
@@ -448,7 +458,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         }
       }
 
-      if (msgId && prevConfig?.honeypot_msg_id) {
+      if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
         await api.channels.deleteMessage(
           prevConfig.honeypot_channel_id,
           prevConfig.honeypot_msg_id,

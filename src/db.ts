@@ -2,7 +2,7 @@ import { SQL } from "bun";
 
 export type HoneypotConfig = {
   guild_id: string;
-  honeypot_channel_id: string;
+  honeypot_channel_id: string | null;
   honeypot_msg_id: string | null;
   log_channel_id: string | null;
   action: 'kick' | 'ban' | 'disabled';
@@ -15,7 +15,7 @@ export async function initDb() {
   await db`
     CREATE TABLE IF NOT EXISTS honeypot_config (
       guild_id TEXT PRIMARY KEY,
-      honeypot_channel_id TEXT NOT NULL,
+      honeypot_channel_id TEXT,
       honeypot_msg_id TEXT,
       log_channel_id TEXT,
       action TEXT NOT NULL DEFAULT 'kick'
