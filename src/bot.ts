@@ -92,17 +92,14 @@ client.on(GatewayDispatchEvents.GuildUpdate, async ({ data: guild }) => {
 client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
   try {
     let config = await getConfig(guild.id);
-    if (config?.action === "disabled") return;
+    if (config?.action === "disabled" || config) return;
 
-    let channelId = config?.honeypot_channel_id;
-    let msgId: string | null = null;
+    let channelId = null as null | string;
+    let msgId = null as null | string;
     let setupSuccess = false;
     try {
-      if (!channelId) {
-        channelId = await findOrCreateHoneypotChannel(api, guild);
-      }
-      const moderatedCount = config ? await getModeratedCount(guild.id) : 0;
-      msgId = config?.honeypot_msg_id || await postWarning(api, channelId, applicationId!, moderatedCount);
+      channelId ||= await findOrCreateHoneypotChannel(api, guild);
+      msgId ||= await postWarning(api, channelId, applicationId!, await getModeratedCount(guild.id));
       setupSuccess = true;
     } catch (err) {
       console.error(`Failed to create/send honeypot message: ${err}`);
@@ -111,8 +108,8 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
       guild_id: guild.id,
       honeypot_channel_id: channelId ?? "",
       honeypot_msg_id: msgId,
-      log_channel_id: config?.log_channel_id ?? null,
-      action: config?.action ?? 'kick',
+      log_channel_id: null,
+      action: 'kick',
     });
     if (!setupSuccess && !config && guild.system_channel_id) {
       try {
