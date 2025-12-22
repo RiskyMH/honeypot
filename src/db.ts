@@ -68,3 +68,16 @@ export async function getModeratedCount(guild_id: string): Promise<number> {
   const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id}`;
   return row.count as number;
 }
+
+export async function clearHoneypotMsgIfChannelId(guildId: string, channelId: string) {
+  await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_channel_id = ${channelId}`;
+}
+
+export async function clearLogChannelIfId(guildId: string, channelId: string) {
+  await db`UPDATE honeypot_config SET log_channel_id = NULL WHERE guild_id = ${guildId} AND log_channel_id = ${channelId}`;
+}
+
+export async function clearHoneypotMsgIfMsgId(guildId: string, messageId: string) {
+  await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_msg_id = ${messageId}`;
+}
+

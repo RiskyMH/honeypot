@@ -3,7 +3,7 @@ import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig } from "./db";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, clearHoneypotMsgIfChannelId, clearLogChannelIfId, clearHoneypotMsgIfMsgId } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
 
 const token = process.env.DISCORD_TOKEN;
@@ -126,6 +126,25 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
     }
   } catch (err) {
     console.error(`Error with GuildCreate handler: ${err}`);
+  }
+});
+
+client.on(GatewayDispatchEvents.ChannelDelete, async ({ data: channel, api }) => {
+  if (!channel.guild_id) return;
+  try {
+    await clearHoneypotMsgIfChannelId(channel.guild_id, channel.id);
+    await clearLogChannelIfId(channel.guild_id, channel.id);
+  } catch (err) {
+    console.error(`Error with ChannelDelete handler: ${err}`);
+  }
+});
+
+client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) => {
+  if (!message.guild_id) return;
+  try {
+    await clearHoneypotMsgIfMsgId(message.guild_id, message.id);
+  } catch (err) {
+    console.error(`Error with MessageDelete handler: ${err}`);
   }
 });
 
@@ -379,7 +398,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       try {
         const count = await getModeratedCount(guildId);
         const messageBody = honeypotWarningMessage(count, newConfig.action);
-        if (honeypotChanged) {
+        if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
           const msg = await api.channels.createMessage(
             newConfig.honeypot_channel_id,
             messageBody
@@ -410,7 +429,6 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         });
         return;
       }
-
 
       if (logChanged && newConfig.log_channel_id) {
         try {
