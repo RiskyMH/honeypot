@@ -5,7 +5,7 @@ export type HoneypotConfig = {
   honeypot_channel_id: string | null;
   honeypot_msg_id: string | null;
   log_channel_id: string | null;
-  action: 'kick' | 'ban' | 'disabled';
+  action: 'softban' | 'ban' | 'disabled';
 };
 
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite");
@@ -18,7 +18,7 @@ export async function initDb() {
       honeypot_channel_id TEXT,
       honeypot_msg_id TEXT,
       log_channel_id TEXT,
-      action TEXT NOT NULL DEFAULT 'kick'
+      action TEXT NOT NULL DEFAULT 'softban'
     );
   `;
   await db`
@@ -40,7 +40,7 @@ export async function getConfig(guild_id: string): Promise<HoneypotConfig | null
     honeypot_channel_id: row.honeypot_channel_id,
     honeypot_msg_id: row.honeypot_msg_id ?? null,
     log_channel_id: row.log_channel_id ?? null,
-    action: ['kick', 'ban', 'disabled'].includes(row.action) ? row.action : 'kick',
+    action: ['softban', 'ban', 'disabled'].includes(row.action) ? row.action : 'softban',
   };
 }
 
@@ -69,15 +69,15 @@ export async function getModeratedCount(guild_id: string): Promise<number> {
   return row.count as number;
 }
 
-export async function clearHoneypotMsgIfChannelId(guildId: string, channelId: string) {
-  await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_channel_id = ${channelId}`;
+export async function unsetHoneypotChannel(guildId: string, channelId: string) {
+  await db`UPDATE honeypot_config SET honeypot_channel_id = NULL, honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_channel_id = ${channelId}`;
 }
 
-export async function clearLogChannelIfId(guildId: string, channelId: string) {
+export async function unsetLogChannel(guildId: string, channelId: string) {
   await db`UPDATE honeypot_config SET log_channel_id = NULL WHERE guild_id = ${guildId} AND log_channel_id = ${channelId}`;
 }
 
-export async function clearHoneypotMsgIfMsgId(guildId: string, messageId: string) {
+export async function unsetHoneypotMsg(guildId: string, messageId: string) {
   await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_msg_id = ${messageId}`;
 }
 

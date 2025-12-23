@@ -3,7 +3,7 @@ import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, clearHoneypotMsgIfChannelId, clearLogChannelIfId, clearHoneypotMsgIfMsgId } from "./db";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
 
 const token = process.env.DISCORD_TOKEN;
@@ -34,14 +34,13 @@ const gateway = new WebSocketManager({
 const client = new Client({ rest, gateway });
 
 async function findOrCreateHoneypotChannel(api: API, guild: GatewayGuildCreateDispatchData): Promise<string> {
-  const channels = await api.guilds.getChannels(guild.id);
-  const channel = channels.find((c: any) => c.name === "honeypot" && c.type === ChannelType.GuildText);
+  const channel = guild.channels.find((c) => c.name === "honeypot" && c.type === ChannelType.GuildText);
   if (channel) return channel.id;
 
   const newChannel = await api.guilds.createChannel(guild.id, {
     name: "honeypot",
     type: ChannelType.GuildText,
-    position: channels.length + 1,
+    position: guild.channels.length + 1,
   }, {
     reason: "Honeypot channel for bot",
   });
@@ -53,7 +52,7 @@ async function postWarning(api: API, channelId: string, applicationId: string, m
   const messages = await api.channels.getMessages(channelId, { limit: 100 }).catch(() => []);
   const botMessages = messages.filter(m => m.author?.id === applicationId);
   let config = await getConfig(channelId).catch(() => null);
-  const action = config?.action || 'kick';
+  const action = config?.action || 'softban';
 
   if (botMessages.length > 0) {
     const [first, ...rest] = botMessages;
@@ -85,12 +84,14 @@ client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
   }
 });
 
-client.on(GatewayDispatchEvents.GuildUpdate, async ({ data: guild }) => {
-  guildCache.delete(guild.id);
+client.on(GatewayDispatchEvents.GuildUpdate, async ({ data: guild, api }) => {
+  guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code });
 });
 
 client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
   try {
+    guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code });
+
     let config = await getConfig(guild.id);
     if (config?.action === "disabled" || config) return;
 
@@ -109,7 +110,7 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
       honeypot_channel_id: channelId,
       honeypot_msg_id: msgId,
       log_channel_id: null,
-      action: 'kick',
+      action: 'softban',
     });
     if (!setupSuccess && !config && guild.system_channel_id) {
       try {
@@ -129,8 +130,8 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
 client.on(GatewayDispatchEvents.ChannelDelete, async ({ data: channel, api }) => {
   if (!channel.guild_id) return;
   try {
-    await clearHoneypotMsgIfChannelId(channel.guild_id, channel.id);
-    await clearLogChannelIfId(channel.guild_id, channel.id);
+    await unsetHoneypotChannel(channel.guild_id, channel.id);
+    await unsetLogChannel(channel.guild_id, channel.id);
   } catch (err) {
     console.error(`Error with ChannelDelete handler: ${err}`);
   }
@@ -139,7 +140,7 @@ client.on(GatewayDispatchEvents.ChannelDelete, async ({ data: channel, api }) =>
 client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) => {
   if (!message.guild_id) return;
   try {
-    await clearHoneypotMsgIfMsgId(message.guild_id, message.id);
+    await unsetHoneypotMsg(message.guild_id, message.id);
   } catch (err) {
     console.error(`Error with MessageDelete handler: ${err}`);
   }
@@ -166,11 +167,11 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 //   }, api);
 // });
 
-const guildCache = new Map<string, { name: string, ownerId: string }>();
+const guildCache = new Map<string, { name: string, ownerId: string, vanityInviteCode: string | null }>();
 const getGuildInfo = async (api: API, guildId: string) => {
   if (guildCache.has(guildId)) return guildCache.get(guildId)!;
   const guild = await api.guilds.get(guildId);
-  const info = { name: guild.name, ownerId: guild.owner_id };
+  const info = { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code || null };
   guildCache.set(guildId, info);
   return info;
 };
@@ -194,6 +195,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     const actionText = {
       ban: 'banned',
       kick: 'kicked',
+      softban: 'kicked',
       disabled: '???it is disabled???'
     }[config.action] || '???unknown action???';
 
@@ -205,13 +207,13 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       let guild = await getGuildInfo(api, guildId).catch(() => null);
       if (guild) {
         guildName = `**${guild.name}**`;
+        if (guild.vanityInviteCode) guildName = `[${guildName}](https://discord.gg/${guild.vanityInviteCode})`;
         if (guild.ownerId === userId) isOwner = true;
       }
       const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
       const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
-      dmMessage = await api.users.createDM(userId).then((dm) =>
-        api.channels.createMessage(dm.id, dmContent)
-      );
+      const { id: dmChannel } = await api.users.createDM(userId);
+      dmMessage = await api.channels.createMessage(dmChannel, dmContent)
     } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
 
     let failed = false;
@@ -224,7 +226,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           { delete_message_seconds: 3600 },
           { reason: "Triggered honeypot -> ban" }
         );
-      } else if (config.action === 'kick') {
+      } else if  (config.action === 'softban' || config.action === 'kick') {
         // Kick: kick but via ban/unban, delete last 1 hour of messages
         await api.guilds.banUser(
           guildId,
@@ -269,12 +271,8 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           // allowed_mentions: {},
         });
       } else if (failed) {
-        const roleReqs = {
-          ban: "**ban members** permission",
-          kick: "**ban members** permission (to softban)",
-        }[config.action] || "appropriate permissions";
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
-          content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have ${roleReqs}.`,
+          content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have **ban members** permission.`,
           allowed_mentions: {},
         });
         await emojiReact;
@@ -302,7 +300,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           honeypot_channel_id: null,
           honeypot_msg_id: null,
           log_channel_id: null,
-          action: 'kick',
+          action: 'softban',
         };
       }
 
@@ -349,7 +347,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               custom_id: "honeypot_action",
               placeholder: "Softban (kick)",
               options: [
-                { label: "Softban (kick)", value: "kick", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "kick" },
+                { label: "Softban (kick)", value: "softban", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "softban" || (config.action as any) === "kick" },
                 { label: "Ban", value: "ban", description: "Permanently bans the user to also delete last 1hr of messages", default: config.action === "ban" },
                 { label: "Disabled", value: "disabled", description: "Don't do anything", default: config.action === "disabled" }
               ],
@@ -371,7 +369,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         honeypot_channel_id: null,
         honeypot_msg_id: null,
         log_channel_id: null,
-        action: 'kick',
+        action: 'softban',
       }
 
       for (const label of interaction.data.components) {

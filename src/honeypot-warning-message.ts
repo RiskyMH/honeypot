@@ -2,10 +2,11 @@ import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, Bu
 
 export function honeypotWarningMessage(
   moderatedCount: number = 0,
-  action: 'ban' | 'kick' | 'disabled' = 'kick'
+  action: 'ban' | 'softban' | 'disabled' = 'softban'
 ): RESTPostAPIChannelMessageJSONBody {
   const actionTextMap = {
     ban: { text: 'an immediate ban', label: 'Bans' },
+    softban: { text: 'a softban', label: 'Kicks' },
     kick: { text: 'a softban', label: 'Kicks' },
     disabled: { text: 'no action (honeypot is disabled)', label: 'Triggers' }
   };
