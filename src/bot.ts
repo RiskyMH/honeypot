@@ -147,8 +147,18 @@ client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) =>
 });
 
 client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) => {
-  if (!message.guild_id || message.author.bot) return;
-  await onMessage({
+  if (!message.guild_id) return;
+  if (message.interaction_metadata && message.author.id !== applicationId) {
+    return await onMessage({
+      userId: message.interaction_metadata.user.id,
+      channelId: message.channel_id,
+      guildId: message.guild_id,
+      messageId: message.id
+    }, api);
+  }
+
+  if (message.author.bot) return;
+  return await onMessage({
     userId: message.author.id,
     channelId: message.channel_id,
     guildId: message.guild_id,
@@ -226,7 +236,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           { delete_message_seconds: 3600 },
           { reason: "Triggered honeypot -> ban" }
         );
-      } else if  (config.action === 'softban' || config.action === 'kick') {
+      } else if (config.action === 'softban' || config.action === 'kick') {
         // Kick: kick but via ban/unban, delete last 1 hour of messages
         await api.guilds.banUser(
           guildId,
