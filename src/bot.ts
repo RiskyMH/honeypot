@@ -405,6 +405,45 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       const prevConfig = await getConfig(guildId);
       const honeypotChanged = newConfig.honeypot_channel_id !== prevConfig?.honeypot_channel_id;
       const logChanged = newConfig.log_channel_id !== prevConfig?.log_channel_id;
+      const actionChanged = newConfig.action !== prevConfig?.action;
+
+      // pretty reasonable requests to ensure user can even do said actions
+      {
+        const resolvedChannel = interaction.data.resolved?.channels?.[newConfig.honeypot_channel_id];
+        const requiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels;
+        if (honeypotChanged && (BigInt(resolvedChannel?.permissions || "0") & requiredPerms) !== requiredPerms) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `You don't have enough permissions to set the honeypot channel to <#${newConfig.honeypot_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel, Manage Messages, Manage Channels.\n-# No settings have been changed.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const resolvedLogChannel = newConfig.log_channel_id ? interaction.data.resolved?.channels?.[newConfig.log_channel_id] : null;
+        const logRequiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel;
+        if (logChanged && newConfig.log_channel_id && (BigInt(resolvedLogChannel?.permissions || "0") & logRequiredPerms) !== logRequiredPerms) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `You don't have enough permissions to set the log channel to <#${newConfig.log_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel.\n-# No settings have been changed.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const memberPerms = interaction.member?.permissions
+        const banEvents = ["ban", "softban"];
+        // check ban permissions even if the action didn't change, because any new channel moved to can suddenly ban people
+        if ((actionChanged || true) && banEvents.includes(newConfig.action) && memberPerms && (BigInt(memberPerms) & PermissionFlagsBits.BanMembers) !== PermissionFlagsBits.BanMembers) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `You need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+        // if any other actions added in future, add their equivalent permission checks here
+      }
 
       // if honeypot channel changed or current honeypot msg is invalid, create new honeypot message
       // otherwise try to edit it with latest data
@@ -466,14 +505,6 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         }
       }
 
-      if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
-        await api.channels.deleteMessage(
-          prevConfig.honeypot_channel_id,
-          prevConfig.honeypot_msg_id,
-          { reason: "Honeypot channel changed, so cleaning up old honeypot message" }
-        ).catch(() => null);
-      }
-
       await setConfig({
         ...(prevConfig || {}),
         ...newConfig,
@@ -483,6 +514,14 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: ${newConfig.action}`,
         allowed_mentions: {},
       });
+
+      if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
+        await api.channels.deleteMessage(
+          prevConfig.honeypot_channel_id,
+          prevConfig.honeypot_msg_id,
+          { reason: "Honeypot channel changed, so cleaning up old honeypot message" }
+        ).catch(() => null);
+      }
       return;
     }
 
@@ -504,7 +543,8 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
       description: "Configure honeypot settings",
       type: ApplicationCommandType.ChatInput,
       options: [],
-      default_member_permissions: PermissionFlagsBits.Administrator.toString(),
+      default_member_permissions:
+        (PermissionFlagsBits.ManageGuild | PermissionFlagsBits.BanMembers | PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels).toString(),
       integration_types: [ApplicationIntegrationType.GuildInstall],
       contexts: [InteractionContextType.Guild],
     },
