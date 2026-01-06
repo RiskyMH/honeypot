@@ -81,3 +81,15 @@ export async function unsetHoneypotMsg(guildId: string, messageId: string) {
   await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_msg_id = ${messageId}`;
 }
 
+export async function getStats(): Promise<{ totalGuilds: number; totalModerated: number; }> {
+  const result = await db`SELECT (SELECT COUNT(*) FROM honeypot_config) AS config_count, (SELECT MAX(id) FROM honeypot_events) AS event_count;`;
+  return {
+    totalGuilds: result[0].config_count as number,
+    totalModerated: result[0].event_count as number,
+  };
+}
+
+export async function getUserModeratedCount(user_id: string): Promise<number> {
+  const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE user_id = ${user_id}`;
+  return row.count as number;
+}

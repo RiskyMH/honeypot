@@ -2,8 +2,8 @@ import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
-import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg } from "./db";
+import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle } from "discord-api-types/v10";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
 
 const token = process.env.DISCORD_TOKEN;
@@ -299,11 +299,10 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
 client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, api }) => {
   const guildId = interaction.guild_id;
-  if (!guildId) return;
 
   try {
     // slash command handler: show modal
-    if (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
+    if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
       let config = await getConfig(guildId);
       if (!config) {
         config = {
@@ -374,7 +373,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
     }
 
     // modal submit handler: update config from modal values
-    else if (interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal`) {
+    else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal`) {
       const newConfig: HoneypotConfig = {
         guild_id: guildId,
         honeypot_channel_id: null,
@@ -526,6 +525,48 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       return;
     }
 
+    // dm command to show stats
+    else if (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "stats") {
+      const { totalGuilds, totalModerated } = await getStats();
+      const userId = (interaction.user || interaction.member?.user)?.id
+      const userModeratedCount = userId ? await getUserModeratedCount(userId) : 0;
+
+      await api.interactions.reply(interaction.id, interaction.token, {
+        flags: MessageFlags.IsComponentsV2,
+        allowed_mentions: {},
+        components: [
+          {
+            type: ComponentType.Container,
+            components: [
+              {
+                type: ComponentType.Section,
+                components: [
+                  {
+                    type: ComponentType.TextDisplay,
+                    content: [
+                      `### ${CUSTOM_EMOJI} Honeypot Bot Statistics ${CUSTOM_EMOJI}`,
+                      ``,
+                      `Total servers: \`${totalGuilds}\``,
+                      `Total moderations: \`${totalModerated}\``,
+                      userModeratedCount ? `Times you've #honeypot'd: \`${userModeratedCount}\`` : null,
+                      ``,
+                      `\n-# Thank you for using Honeypot Bot to keep your servers safe from unwanted bots!`
+                    ].filter(Boolean).join("\n"),
+                  }
+                ],
+                accessory: {
+                  type: ComponentType.Button,
+                  url: `https://discord.com/oauth2/authorize?client_id=${applicationId}`,
+                  style: ButtonStyle.Link,
+                  label: "Invite"
+                }
+              },
+            ]
+          }
+        ]
+      });
+    }
+
     return;
   } catch (err) {
     console.error("Error with InteractionCreate handler:", err);
@@ -548,6 +589,13 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
         (PermissionFlagsBits.ManageGuild | PermissionFlagsBits.BanMembers | PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels).toString(),
       integration_types: [ApplicationIntegrationType.GuildInstall],
       contexts: [InteractionContextType.Guild],
+    },
+    {
+      name: "stats",
+      description: "See statistics all servers using honeypot",
+      type: ApplicationCommandType.ChatInput,
+      options: [],
+      contexts: [InteractionContextType.BotDM],
     },
   ]);
 
