@@ -539,30 +539,45 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
             type: ComponentType.Container,
             components: [
               {
-                type: ComponentType.Section,
+                type: ComponentType.TextDisplay,
+                content: [
+                  `## ${CUSTOM_EMOJI} Honeypot Bot Statistics ${CUSTOM_EMOJI}`,
+                  "",
+                  `Total servers: \`${totalGuilds.toLocaleString()}\``,
+                  `Total moderations: \`${totalModerated.toLocaleString()}\``,
+                  `Times you've #honeypot'd: \`${(userModeratedCount || 0).toLocaleString()}\``,
+                ].join("\n"),
+              },
+              {
+                type: ComponentType.TextDisplay,
+                content: "-# Thank you for using [Honeypot Bot](https://discord.com/discovery/applications/1450060292716494940) to keep your servers safe from unwanted bots!"
+              },
+              {
+                type: ComponentType.ActionRow,
                 components: [
                   {
-                    type: ComponentType.TextDisplay,
-                    content: [
-                      `### ${CUSTOM_EMOJI} Honeypot Bot Statistics ${CUSTOM_EMOJI}`,
-                      ``,
-                      `Total servers: \`${totalGuilds}\``,
-                      `Total moderations: \`${totalModerated}\``,
-                      userModeratedCount ? `Times you've #honeypot'd: \`${userModeratedCount}\`` : null,
-                      ``,
-                      `\n-# Thank you for using Honeypot Bot to keep your servers safe from unwanted bots!`
-                    ].filter(Boolean).join("\n"),
-                  }
-                ],
-                accessory: {
                   type: ComponentType.Button,
-                  url: `https://discord.com/oauth2/authorize?client_id=${applicationId}`,
+                  url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
                   style: ButtonStyle.Link,
-                  label: "Invite"
-                }
+                    label: "Invite Bot",
+                    emoji: { name: `honeypot`, id: CUSTOM_EMOJI_ID }
+                  },
+                  {
+                    type: ComponentType.Button,
+                    url: "https://discord.gg/BanFeVWyFP",
+                    style: ButtonStyle.Link,
+                    label: "Support Server"
+                  },
+                  {
+                    type: ComponentType.Button,
+                    url: "https://riskymh.dev",
+                    style: ButtonStyle.Link,
+                    label: "riskymh.dev"
               },
             ]
-          }
+              },
+            ],
+          },
         ]
       });
     }
