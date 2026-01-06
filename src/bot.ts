@@ -77,6 +77,7 @@ async function postWarning(api: API, channelId: string, applicationId: string, m
 
 client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
   try {
+    if (guild.unavailable === true) return;
     await deleteConfig(guild.id);
     guildCache.delete(guild.id);
   } catch (err) {
