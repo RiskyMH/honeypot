@@ -29,6 +29,18 @@ const gateway = new WebSocketManager({
   token,
   intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
   rest,
+  initialPresence: {
+    since: null,
+    activities: [
+      {
+        name: "#honeypot",
+        state: "Watching #honeypot for bots",
+        type: ActivityType.Custom,
+      }
+    ],
+    status: PresenceUpdateStatus.Online,
+    afk: false,
+  }
 });
 
 const client = new Client({ rest, gateway });
@@ -556,11 +568,11 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
                 type: ComponentType.ActionRow,
                 components: [
                   {
-                  type: ComponentType.Button,
-                  url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
-                  style: ButtonStyle.Link,
+                    type: ComponentType.Button,
+                    url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
+                    style: ButtonStyle.Link,
                     label: "Invite Bot",
-                    emoji: { name: `honeypot`, id: CUSTOM_EMOJI_ID }
+                    emoji: { name: "honeypot", id: CUSTOM_EMOJI_ID }
                   },
                   {
                     type: ComponentType.Button,
@@ -573,8 +585,8 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
                     url: "https://riskymh.dev",
                     style: ButtonStyle.Link,
                     label: "riskymh.dev"
-              },
-            ]
+                  },
+                ]
               },
             ],
           },
@@ -614,21 +626,21 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
     },
   ]);
 
-  client.gateway.send(c.shardId, {
-    op: GatewayOpcodes.PresenceUpdate,
-    d: {
-      since: null,
-      activities: [
-        {
-          name: "#honeypot",
-          state: "Watching #honeypot for bots",
-          type: ActivityType.Custom,
-        }
-      ],
-      status: PresenceUpdateStatus.Online,
-      afk: false,
-    }
-  });
+  // client.gateway.send(c.shardId, {
+  //   op: GatewayOpcodes.PresenceUpdate,
+  //   d: {
+  //     since: null,
+  //     activities: [
+  //       {
+  //         name: "#honeypot",
+  //         state: "Watching #honeypot for bots",
+  //         type: ActivityType.Custom,
+  //       }
+  //     ],
+  //     status: PresenceUpdateStatus.Online,
+  //     afk: false,
+  //   }
+  // });
 
 });
 
