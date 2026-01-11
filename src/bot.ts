@@ -4,7 +4,7 @@ import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount } from "./db";
-import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
+import { honeypotWarningMessage, honeypotUserDMMessage } from "./messages";
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
@@ -48,7 +48,7 @@ async function findOrCreateHoneypotChannel(api: API, guild: GatewayGuildCreateDi
 }
 
 
-async function postWarning(api: API, channelId: string, applicationId: string, moderatedCount = 0) {
+async function postWarning(api: API, channelId: string, applicationId: string, moderatedCount = 0, locale = 'en'): Promise<string> {
   const messages = await api.channels.getMessages(channelId, { limit: 100 }).catch(() => []);
   const botMessages = messages.filter(m => m.author?.id === applicationId);
   let config = await getConfig(channelId).catch(() => null);
@@ -57,20 +57,20 @@ async function postWarning(api: API, channelId: string, applicationId: string, m
   if (botMessages.length > 0) {
     const [first, ...rest] = botMessages;
     if (!first) {
-      const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
+      const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action, locale));
       return msg.id;
     }
     try {
-      await api.channels.editMessage(channelId, first.id, honeypotWarningMessage(moderatedCount, action));
+      await api.channels.editMessage(channelId, first.id, honeypotWarningMessage(moderatedCount, action, locale));
       await Promise.allSettled(rest.map(msg => api.channels.deleteMessage(channelId, msg.id, { reason: "Removing duplicate honeypot messages" })));
       return first.id;
     } catch (err) {
-      const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
+      const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action, locale));
       await Promise.allSettled(botMessages.map(msg => api.channels.deleteMessage(channelId, msg.id, { reason: "Removing duplicate honeypot messages" })));
       return msg.id;
     }
   } else {
-    const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
+    const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action, locale));
     return msg.id;
   }
 }
@@ -86,12 +86,12 @@ client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
 });
 
 client.on(GatewayDispatchEvents.GuildUpdate, async ({ data: guild, api }) => {
-  guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code });
+  guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code, lang: guild.preferred_locale });
 });
 
 client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
   try {
-    guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code });
+    guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code, lang: guild.preferred_locale });
 
     let config = await getConfig(guild.id);
     if (config?.action === "disabled" || config) return;
@@ -101,7 +101,7 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
     let setupSuccess = false;
     try {
       channelId ||= await findOrCreateHoneypotChannel(api, guild);
-      msgId ||= await postWarning(api, channelId, applicationId!, await getModeratedCount(guild.id));
+      msgId ||= await postWarning(api, channelId, applicationId!, await getModeratedCount(guild.id), guild.preferred_locale);
       setupSuccess = true;
     } catch (err) {
       console.error(`Failed to create/send honeypot message: ${err}`);
@@ -148,13 +148,15 @@ client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) =>
 });
 
 client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) => {
+  console.dir(message, {depth: null})
   if (!message.guild_id) return;
   if (message.interaction_metadata && message.author.id !== applicationId) {
     return await onMessage({
       userId: message.interaction_metadata.user.id,
       channelId: message.channel_id,
       guildId: message.guild_id,
-      messageId: message.id
+      messageId: message.id,
+      locale: message.interaction_metadata.user.locale
     }, api);
   }
 
@@ -163,7 +165,8 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
     userId: message.author.id,
     channelId: message.channel_id,
     guildId: message.guild_id,
-    messageId: message.id
+    messageId: message.id,
+    locale: message.author.locale
   }, api);
 });
 
@@ -178,16 +181,16 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 //   }, api);
 // });
 
-const guildCache = new Map<string, { name: string, ownerId: string, vanityInviteCode: string | null }>();
+const guildCache = new Map<string, { name: string, ownerId: string, vanityInviteCode: string | null, lang?: string }>();
 const getGuildInfo = async (api: API, guildId: string) => {
   if (guildCache.has(guildId)) return guildCache.get(guildId)!;
   const guild = await api.guilds.get(guildId);
-  const info = { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code || null };
+  const info = { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code || null, lang: guild.preferred_locale };
   guildCache.set(guildId, info);
   return info;
 };
 
-const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string }, api: API) => {
+const onMessage = async ({ userId, channelId, guildId, messageId, threadId, locale: _locale }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string, locale?: string }, api: API) => {
   try {
     const config = await getConfig(guildId);
     if (!config || !config.action) return;
@@ -203,26 +206,21 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
     if (config.action === 'disabled') return;
 
-    const actionText = {
-      ban: 'banned',
-      kick: 'kicked',
-      softban: 'kicked',
-      disabled: '???it is disabled???'
-    }[config.action] || '???unknown action???';
-
     // should DM user first before banning so that discord has less reason to block it
     let dmMessage: APIMessage | null = null;
     let isOwner = false;
+    let guildLocale = 'en';
     try {
       let guildName = `this server`;
       let guild = await getGuildInfo(api, guildId).catch(() => null);
       if (guild) {
+        guildLocale = guild.lang || 'en';
         guildName = `**${guild.name}**`;
         if (guild.vanityInviteCode) guildName = `[${guildName}](https://discord.gg/${guild.vanityInviteCode})`;
         if (guild.ownerId === userId) isOwner = true;
       }
       const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
-      const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
+      const dmContent = honeypotUserDMMessage(config.action, guildName, link, isOwner, _locale || guild?.lang || 'en');
       const { id: dmChannel } = await api.users.createDM(userId);
       dmMessage = await api.channels.createMessage(dmChannel, dmContent)
     } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
@@ -266,12 +264,19 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       await api.channels.editMessage(
         config.honeypot_channel_id,
         config.honeypot_msg_id,
-        honeypotWarningMessage(moderatedCount, config.action)
+        honeypotWarningMessage(moderatedCount, config.action, guildLocale)
       );
     } catch (err) { console.error(`Failed to update honeypot message: ${err}`); }
 
     try {
       if (config.log_channel_id && !failed && !isOwner) {
+        const actionText = {
+          ban: 'banned',
+          kick: 'kicked',
+          softban: 'kicked',
+          disabled: '???it is disabled???'
+        }[config.action] || '???unknown action???';
+
         await api.channels.createMessage(config.log_channel_id, {
           content: `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
           allowed_mentions: {}
@@ -451,7 +456,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       let msgId: string | null = null;
       try {
         const count = await getModeratedCount(guildId);
-        const messageBody = honeypotWarningMessage(count, newConfig.action);
+        const messageBody = honeypotWarningMessage(count, newConfig.action, interaction.guild_locale || 'en');
         if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
           const msg = await api.channels.createMessage(
             newConfig.honeypot_channel_id,
@@ -556,11 +561,11 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
                 type: ComponentType.ActionRow,
                 components: [
                   {
-                  type: ComponentType.Button,
-                  url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
-                  style: ButtonStyle.Link,
+                    type: ComponentType.Button,
+                    url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
+                    style: ButtonStyle.Link,
                     label: "Invite Bot",
-                    emoji: { name: `honeypot`, id: CUSTOM_EMOJI_ID }
+                    emoji: { name: "honeypot", id: CUSTOM_EMOJI_ID }
                   },
                   {
                     type: ComponentType.Button,
@@ -573,8 +578,8 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
                     url: "https://riskymh.dev",
                     style: ButtonStyle.Link,
                     label: "riskymh.dev"
-              },
-            ]
+                  },
+                ]
               },
             ],
           },
