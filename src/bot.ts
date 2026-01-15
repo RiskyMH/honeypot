@@ -237,7 +237,10 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
       const { id: dmChannel } = await api.users.createDM(userId);
       dmMessage = await api.channels.createMessage(dmChannel, dmContent)
-    } catch { /* Ignore DM errors (user has DMs closed, etc.) */ }
+    } catch (err) {
+      /* Ignore DM errors (user has DMs closed, etc.) */
+      console.log(`Failed to send DM to user: ${err}`)
+    }
 
     let failed = false;
     if (!isOwner) try {
@@ -266,6 +269,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
         console.error("Unknown action in honeypot config:", config.action);
       }
     } catch (err) {
+      console.log(`Failed to ${config.action} user: ${err}`);
       failed = true;
     } else {
       // server owner cannot be banned/kicked by anyone
