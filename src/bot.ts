@@ -191,9 +191,9 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 // });
 
 const guildCache = new Map<string, { name: string, ownerId: string, vanityInviteCode: string | null }>();
-const getGuildInfo = async (api: API, guildId: string) => {
+const getGuildInfo = async (api: API, guildId: string, signal?: AbortSignal) => {
   if (guildCache.has(guildId)) return guildCache.get(guildId)!;
-  const guild = await api.guilds.get(guildId);
+  const guild = await api.guilds.get(guildId, { signal });
   const info = { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code || null };
   guildCache.set(guildId, info);
   return info;
@@ -226,8 +226,9 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     let dmMessage: APIMessage | null = null;
     let isOwner = false;
     try {
+      const timeout = AbortSignal.timeout(1500);
       let guildName = `this server`;
-      let guild = await getGuildInfo(api, guildId).catch(() => null);
+      let guild = await getGuildInfo(api, guildId, timeout).catch(() => null);
       if (guild) {
         guildName = `**${guild.name}**`;
         if (guild.vanityInviteCode) guildName = `[${guildName}](https://discord.gg/${guild.vanityInviteCode})`;
@@ -235,8 +236,8 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       }
       const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
       const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
-      const { id: dmChannel } = await api.users.createDM(userId);
-      dmMessage = await api.channels.createMessage(dmChannel, dmContent)
+      const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
+      dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
     } catch (err) {
       /* Ignore DM errors (user has DMs closed, etc.) */
       console.log(`Failed to send DM to user: ${err}`)
