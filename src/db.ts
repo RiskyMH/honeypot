@@ -6,6 +6,7 @@ export type HoneypotConfig = {
   honeypot_msg_id: string | null;
   log_channel_id: string | null;
   action: 'softban' | 'ban' | 'disabled';
+  experiments: ("no-warning-msg" | "no-dm" | "random-channel-name" | "random-channel-name-chaos" | "channel-warmer")[]
 };
 
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite");
@@ -18,7 +19,8 @@ export async function initDb() {
       honeypot_channel_id TEXT,
       honeypot_msg_id TEXT,
       log_channel_id TEXT,
-      action TEXT NOT NULL DEFAULT 'softban'
+      action TEXT NOT NULL DEFAULT 'softban',
+      experiments TEXT DEFAULT '[]'
     );
   `;
   await db`
@@ -41,18 +43,20 @@ export async function getConfig(guild_id: string): Promise<HoneypotConfig | null
     honeypot_msg_id: row.honeypot_msg_id ?? null,
     log_channel_id: row.log_channel_id ?? null,
     action: ['softban', 'ban', 'disabled'].includes(row.action) ? row.action : 'softban',
+    experiments: JSON.parse(row.experiments || '[]'),
   };
 }
 
 export async function setConfig(config: HoneypotConfig) {
   await db`
-    INSERT INTO honeypot_config (guild_id, honeypot_channel_id, honeypot_msg_id, log_channel_id, action)
-    VALUES (${config.guild_id}, ${config.honeypot_channel_id}, ${config.honeypot_msg_id}, ${config.log_channel_id}, ${config.action})
+    INSERT INTO honeypot_config (guild_id, honeypot_channel_id, honeypot_msg_id, log_channel_id, action, experiments)
+    VALUES (${config.guild_id}, ${config.honeypot_channel_id}, ${config.honeypot_msg_id}, ${config.log_channel_id}, ${config.action}, ${JSON.stringify(config.experiments || [])})
     ON CONFLICT(guild_id) DO UPDATE SET
       honeypot_channel_id=excluded.honeypot_channel_id,
       honeypot_msg_id=excluded.honeypot_msg_id,
       log_channel_id=excluded.log_channel_id,
-      action=excluded.action
+      action=excluded.action,
+      experiments=excluded.experiments
   `;
 }
 
@@ -92,4 +96,16 @@ export async function getStats(): Promise<{ totalGuilds: number; totalModerated:
 export async function getUserModeratedCount(user_id: string): Promise<number> {
   const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE user_id = ${user_id}`;
   return row.count as number;
+}
+
+export async function getGuildsWithExperiment(experiment: HoneypotConfig["experiments"][number]): Promise<HoneypotConfig[]> {
+  const rows = await db`SELECT * FROM honeypot_config WHERE experiments LIKE '%' || ${experiment} || '%'`;
+  return rows.map((row: any) => ({
+    guild_id: row.guild_id,
+    honeypot_channel_id: row.honeypot_channel_id,
+    honeypot_msg_id: row.honeypot_msg_id ?? null,
+    log_channel_id: row.log_channel_id ?? null,
+    action: ['softban', 'ban', 'disabled'].includes(row.action) ? row.action : 'softban',
+    experiments: JSON.parse(row.experiments || '[]'),
+  }));
 }

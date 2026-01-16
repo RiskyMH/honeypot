@@ -3,12 +3,13 @@ import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount } from "./db";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
+import randomChannelNames from "./random-channel-names.yaml";
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
-let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet most didn't know this fact about discord tokens
+let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet most didn’t know this fact about discord tokens
 
 await initDb();
 
@@ -29,6 +30,7 @@ const gateway = new WebSocketManager({
   token,
   intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
   rest,
+  shardCount: null,
   initialPresence: {
     since: null,
     activities: [
@@ -40,10 +42,12 @@ const gateway = new WebSocketManager({
     ],
     status: PresenceUpdateStatus.Online,
     afk: false,
-  }
+  },
 });
 
 const client = new Client({ rest, gateway });
+
+const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
 async function findOrCreateHoneypotChannel(api: API, guild: GatewayGuildCreateDispatchData): Promise<string> {
   const channel = guild.channels.find((c) => c.name === "honeypot" && c.type === ChannelType.GuildText);
@@ -124,11 +128,12 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
       honeypot_msg_id: msgId,
       log_channel_id: null,
       action: 'softban',
+      experiments: [],
     });
     if (!setupSuccess && !config && guild.system_channel_id) {
       try {
         await api.channels.createMessage(guild.system_channel_id, {
-          content: `👋 Thanks for adding the honeypot bot! Please run /honeypot to finish setup.\n-# The bot couldn't create or send the warning message automatically.`,
+          content: `👋 Thanks for adding the honeypot bot! Please run /honeypot to finish setup.\n-# The bot couldn’t create or send the warning message automatically.`,
           allowed_mentions: {}
         });
       } catch (err) {
@@ -211,7 +216,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       channelId,
       messageId,
       `honeypot:${CUSTOM_EMOJI_ID}`,
-      // this really doesn't matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
+      // this really doesn’t matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
       { signal: AbortSignal.timeout(500) }
     ).catch(() => null);
 
@@ -236,10 +241,12 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
         if (guild.vanityInviteCode) guildName = `[${guildName}](https://discord.gg/${guild.vanityInviteCode})`;
         if (guild.ownerId === userId) isOwner = true;
       }
-      const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
-      const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
-      const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
-      dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
+      if (!config.experiments.includes("no-dm")) {
+        const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
+        const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
+        const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
+        dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
+      }
     } catch (err) {
       /* Ignore DM errors (user has DMs closed, etc.) */
       console.log(`Failed to send DM to user: ${err}`)
@@ -282,7 +289,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     };
     if (!failed && !isOwner) await logModerateEvent(guildId, userId);
 
-    if (config.honeypot_msg_id) try {
+    if (config.honeypot_msg_id && !config.experiments.includes("no-warning-msg")) try {
       const moderatedCount = await getModeratedCount(guildId);
       await api.channels.editMessage(
         config.honeypot_channel_id,
@@ -297,12 +304,12 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           content: `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
           allowed_mentions: {}
         });
-      } else if (isOwner) {
+      } else if (isOwner && !config.experiments.includes("no-warning-msg")) {
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
           content: `⚠️ User <@${userId}> triggered the honeypot, but they are the **server owner** so I cannot ${config.action} them.\n-# In anycase **ensure my role is higher** than people’s highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
           // allowed_mentions: {},
         });
-      } else if (failed) {
+      } else if (failed && !config.experiments.includes("no-warning-msg")) {
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
           content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have **ban members** permission.`,
           allowed_mentions: {},
@@ -325,15 +332,14 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
     // slash command handler: show modal
     if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
       let config = await getConfig(guildId);
-      if (!config) {
-        config = {
-          guild_id: guildId,
-          honeypot_channel_id: null,
-          honeypot_msg_id: null,
-          log_channel_id: null,
-          action: 'softban',
-        };
-      }
+      config ||= {
+        guild_id: guildId,
+        honeypot_channel_id: null,
+        honeypot_msg_id: null,
+        log_channel_id: null,
+        action: 'softban',
+        experiments: []
+      };
 
       const modal: APIModalInteractionResponseCallbackData = {
         title: "Honeypot",
@@ -380,11 +386,30 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               options: [
                 { label: "Softban (kick)", value: "softban", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "softban" || (config.action as any) === "kick" },
                 { label: "Ban", value: "ban", description: "Permanently bans the user to also delete last 1hr of messages", default: config.action === "ban" },
-                { label: "Disabled", value: "disabled", description: "Don't do anything", default: config.action === "disabled" }
+                { label: "Disabled", value: "disabled", description: "Don’t do anything", default: config.action === "disabled" }
               ],
               min_values: 1,
               max_values: 1,
               required: true,
+            }
+          },
+          {
+            type: ComponentType.Label,
+            label: "Experiments",
+            // description: "Some optional experimental features to try out",
+            component: {
+              type: ComponentType.StringSelect,
+              custom_id: "honeypot_experiments",
+              placeholder: "Select experiments to enable",
+              options: [
+                { label: "No Warning Msg", value: "no-warning-msg", description: "Don’t include a warning message in the #honeypot channel", default: config.experiments.includes("no-warning-msg") },
+                { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
+                { label: "Channel Warmer", value: "channel-warmer", description: "Keep the honeypot channel active (every day)", default: config.experiments.includes("channel-warmer") },
+                { label: "Random Channel Name", value: "random-channel-name", description: "Randomize the honeypot channel name (every day)", default: config.experiments.includes("random-channel-name") },
+                { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
+              ],
+              max_values: 5,
+              required: false,
             }
           }
         ]
@@ -401,19 +426,33 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         honeypot_msg_id: null,
         log_channel_id: null,
         action: 'softban',
+        experiments: []
       }
 
       for (const label of interaction.data.components) {
-        const c = (label as any).component ?? label;
+        if (label.type !== ComponentType.Label) continue;
+        const c = (label).component ?? label;
         if (!c) continue;
-        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.honeypot_channel_id = c.values[0];
-        if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0];
-        if (c.custom_id === "honeypot_action" && Array.isArray(c.values) && c.values.length > 0) {
-          if (["kick", "ban", "disabled"].includes(c.values[0])) newConfig.action = c.values[0] as any;
+
+        if (c.type === ComponentType.ChannelSelect) {
+          if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.honeypot_channel_id = c.values[0]!;
+          if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0]!;
+        }
+        if (c.type === ComponentType.StringSelect) {
+          if (c.custom_id === "honeypot_action" && Array.isArray(c.values) && c.values.length > 0) {
+            if (["kick", "ban", "disabled"].includes(c.values[0]!)) newConfig.action = c.values[0] as any;
+          }
+          if (c.custom_id === "honeypot_experiments" && Array.isArray(c.values)) {
+            for (const val of c.values) {
+              if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer"].includes(val)) {
+                newConfig.experiments.push(val as any);
+              }
+            }
+          }
         }
       }
 
-      // shouldn't happen, but just in case
+      // shouldn’t happen, but just in case
       if (!newConfig.honeypot_channel_id) {
         await api.interactions.reply(interaction.id, interaction.token, {
           content: `Honeypot channel is required! No changes have been made.`,
@@ -432,9 +471,9 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       {
         const resolvedChannel = interaction.data.resolved?.channels?.[newConfig.honeypot_channel_id];
         const requiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels;
-        if (honeypotChanged && (BigInt(resolvedChannel?.permissions || "0") & requiredPerms) !== requiredPerms) {
+        if (honeypotChanged && !hasPermission(BigInt(resolvedChannel?.permissions || "0"), requiredPerms)) {
           await api.interactions.reply(interaction.id, interaction.token, {
-            content: `You don't have enough permissions to set the honeypot channel to <#${newConfig.honeypot_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel, Manage Messages, Manage Channels.\n-# No settings have been changed.`,
+            content: `You don’t have enough permissions to set the honeypot channel to <#${newConfig.honeypot_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel, Manage Messages, Manage Channels.\n-# No settings have been changed.`,
             allowed_mentions: {},
             flags: MessageFlags.Ephemeral,
           });
@@ -443,9 +482,9 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
         const resolvedLogChannel = newConfig.log_channel_id ? interaction.data.resolved?.channels?.[newConfig.log_channel_id] : null;
         const logRequiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel;
-        if (logChanged && newConfig.log_channel_id && (BigInt(resolvedLogChannel?.permissions || "0") & logRequiredPerms) !== logRequiredPerms) {
+        if (logChanged && newConfig.log_channel_id && !hasPermission(BigInt(resolvedLogChannel?.permissions || "0"), logRequiredPerms)) {
           await api.interactions.reply(interaction.id, interaction.token, {
-            content: `You don't have enough permissions to set the log channel to <#${newConfig.log_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel.\n-# No settings have been changed.`,
+            content: `You don’t have enough permissions to set the log channel to <#${newConfig.log_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel.\n-# No settings have been changed.`,
             allowed_mentions: {},
             flags: MessageFlags.Ephemeral,
           });
@@ -454,10 +493,20 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
         const memberPerms = interaction.member?.permissions
         const banEvents = ["ban", "softban"];
-        // check ban permissions even if the action didn't change, because any new channel moved to can suddenly ban people
-        if ((actionChanged || true) && banEvents.includes(newConfig.action) && memberPerms && (BigInt(memberPerms) & PermissionFlagsBits.BanMembers) !== PermissionFlagsBits.BanMembers) {
+        // check ban permissions even if the action didn’t change, because any new channel moved to can suddenly ban people
+        if ((actionChanged || true) && banEvents.includes(newConfig.action) && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.BanMembers)) {
           await api.interactions.reply(interaction.id, interaction.token, {
             content: `You need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const usingChannelNameExperiment = (newConfig.experiments.includes("random-channel-name") || newConfig.experiments.includes("random-channel-name-chaos"));
+        if (usingChannelNameExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ManageChannels)) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `I need the Manage Channels permission to enable the "Random Channel Name" experiment.\n-# No settings have been changed.`,
             allowed_mentions: {},
             flags: MessageFlags.Ephemeral,
           });
@@ -470,39 +519,48 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       // otherwise try to edit it with latest data
       // but if either fail, then let user know its broken sadly
       let msgId: string | null = null;
-      try {
-        const count = await getModeratedCount(guildId);
-        const messageBody = honeypotWarningMessage(count, newConfig.action);
-        if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
-          const msg = await api.channels.createMessage(
-            newConfig.honeypot_channel_id,
-            messageBody
-          );
-          msgId = msg.id;
-        } else if (prevConfig?.honeypot_msg_id) {
-          try {
-            await api.channels.editMessage(
-              newConfig.honeypot_channel_id,
-              prevConfig.honeypot_msg_id,
-              messageBody
-            );
-          } catch {
+      if (!newConfig.experiments.includes("no-warning-msg")) {
+        try {
+          const count = await getModeratedCount(guildId);
+          const messageBody = honeypotWarningMessage(count, newConfig.action);
+          if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
             const msg = await api.channels.createMessage(
               newConfig.honeypot_channel_id,
               messageBody
             );
             msgId = msg.id;
+          } else if (prevConfig?.honeypot_msg_id) {
+            try {
+              await api.channels.editMessage(
+                newConfig.honeypot_channel_id,
+                prevConfig.honeypot_msg_id,
+                messageBody
+              );
+            } catch {
+              const msg = await api.channels.createMessage(
+                newConfig.honeypot_channel_id,
+                messageBody
+              );
+              msgId = msg.id;
+            }
+          } else {
+            console.error("No previous honeypot message ID found to edit.");
           }
-        } else {
-          console.error("No previous honeypot message ID found to edit.");
+        } catch (err) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `There was a problem setting up the honeypot channel to <#${newConfig.honeypot_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
         }
-      } catch (err) {
-        await api.interactions.reply(interaction.id, interaction.token, {
-          content: `There was a problem setting up the honeypot channel to <#${newConfig.honeypot_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
-          allowed_mentions: {},
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
+      } else if (prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
+        // they didn’t want honeypot msg, so delete old one if exists
+        await api.channels.deleteMessage(
+          prevConfig.honeypot_channel_id,
+          prevConfig.honeypot_msg_id,
+        ).catch(() => null);
+        newConfig.honeypot_msg_id = null;
       }
 
       if (logChanged && newConfig.log_channel_id) {
@@ -532,7 +590,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         honeypot_msg_id: msgId || newConfig.honeypot_msg_id || prevConfig?.honeypot_msg_id || null,
       });
       await api.interactions.reply(interaction.id, interaction.token, {
-        content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: ${newConfig.action}`,
+        content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
         allowed_mentions: {},
       });
 
@@ -542,6 +600,19 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           prevConfig.honeypot_msg_id,
           { reason: "Honeypot channel changed, so cleaning up old honeypot message" }
         ).catch(() => null);
+      }
+
+      // run any experiments that were just enabled immediately to show user it works
+      if (!prevConfig?.experiments.includes("channel-warmer") && newConfig.experiments.includes("channel-warmer")) {
+        await channelWarmerExperiment(guildId, newConfig.honeypot_channel_id!)
+          .catch((err) => console.error(`Failed to run channel warmer experiment immediately after enabling: ${err}`));
+      }
+      if (
+        (!prevConfig?.experiments.includes("random-channel-name") && newConfig.experiments.includes("random-channel-name"))
+        || (!prevConfig?.experiments.includes("random-channel-name-chaos") && newConfig.experiments.includes("random-channel-name-chaos"))
+      ) {
+        await randomChannelNameExperiment(guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
+          .catch((err) => console.error(`Failed to run random channel name experiment immediately after enabling: ${err}`))
       }
       return;
     }
@@ -609,6 +680,91 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
   }
 });
 
+function runAtMidnightUTC(fn: () => void) {
+  const now = new Date();
+  const nextMidnightUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const msToMidnight = nextMidnightUTC.getTime() - now.getTime();
+  setTimeout(() => {
+    fn();
+    setInterval(fn, 24 * 60 * 60 * 1000); // every 24h after first run
+  }, msToMidnight);
+}
+
+async function channelWarmerExperiment(guildId: string, channelId: string) {
+  const msg = await client.api.channels.createMessage(
+    channelId,
+    {
+      content: `Keeping the honeypot channel active! ${CUSTOM_EMOJI}`,
+      allowed_mentions: {},
+    }
+  );
+  await Bun.sleep(50);
+  await client.api.channels.deleteMessage(
+    channelId,
+    msg.id,
+    { reason: "Channel warmer experiment" }
+  );
+}
+async function randomChannelNameExperiment(guildId: string, channelId: string, isChaos = false) {
+  let newName = "honeypot";
+  if (isChaos) {
+    const length = Math.floor(Math.random() * 20) + 7;
+    newName = "";
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789-";
+    for (let i = 0; i < length; i++) {
+      newName += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+  } else {
+    const randomNames = Array.isArray(randomChannelNames) ? randomChannelNames : ["honeypot"]
+    newName = randomNames[Math.floor(Math.random() * randomNames.length)];
+  }
+  await client.api.channels.edit(
+    channelId,
+    { name: newName },
+    { reason: "Random channel name experiment" + (isChaos ? " (chaos edition)" : "") }
+  );
+}
+
+runAtMidnightUTC(async () => {
+  // intentionally only run one at a time with delay to avoid rate limits (as least important feature)
+
+  // channel warmer experiment - send a msg and instantly delete it to keep channel active
+  const channelWarmer = async () => {
+    const guilds = await getGuildsWithExperiment("channel-warmer");
+    const configs = guilds.filter(config => !!config?.honeypot_channel_id);
+    for (const config of configs) {
+      try {
+        await channelWarmerExperiment(config.guild_id, config.honeypot_channel_id!);
+        await Bun.sleep(1_000);
+      } catch (err) {
+        console.error(`Channel warmer experiment execution failed for guild:`, err);
+      }
+    }
+  };
+
+  // random channel name experiment - change the honeypot channel name to a random name
+  const randomChannelName = async () => {
+    const guilds = await getGuildsWithExperiment("random-channel-name");
+    const configs = guilds.filter(config => !!config?.honeypot_channel_id);
+    for (const config of configs) {
+      try {
+        await randomChannelNameExperiment(
+          config.guild_id,
+          config.honeypot_channel_id!,
+          config.experiments.includes("random-channel-name-chaos")
+        )
+        await Bun.sleep(1_000);
+      } catch (err) {
+        console.error(`Random channel name experiment execution failed for guild:`, err);
+      }
+    }
+  };
+
+  await Promise.all([
+    channelWarmer(),
+    randomChannelName(),
+  ]);
+});
 
 client.once(GatewayDispatchEvents.Ready, (c) => {
   console.log(`${c.data.user.username}#${c.data.user.discriminator} is ready!`);
@@ -634,23 +790,6 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
       contexts: [InteractionContextType.BotDM],
     },
   ]);
-
-  // client.gateway.send(c.shardId, {
-  //   op: GatewayOpcodes.PresenceUpdate,
-  //   d: {
-  //     since: null,
-  //     activities: [
-  //       {
-  //         name: "#honeypot",
-  //         state: "Watching #honeypot for bots",
-  //         type: ActivityType.Custom,
-  //       }
-  //     ],
-  //     status: PresenceUpdateStatus.Online,
-  //     afk: false,
-  //   }
-  // });
-
 });
 
 gateway.connect();

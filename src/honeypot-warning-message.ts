@@ -1,8 +1,9 @@
 import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, ButtonStyle } from "discord-api-types/v10";
+import type { HoneypotConfig } from "./db";
 
 export function honeypotWarningMessage(
   moderatedCount: number = 0,
-  action: 'ban' | 'softban' | 'disabled' = 'softban'
+  action: HoneypotConfig["action"] = 'softban'
 ): RESTPostAPIChannelMessageJSONBody {
   const actionTextMap = {
     ban: { text: 'an immediate ban', label: 'Bans' },
