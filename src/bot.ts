@@ -268,14 +268,29 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           guildId,
           userId,
           { delete_message_seconds: 3600 },
-          { reason: "Triggered honeypot -> softban (kick)" }
+          { reason: "Triggered honeypot -> softban (kick) 1/4" }
         );
         // maybe discord needs time to yeet their messages?
-        await Bun.sleep(60_000)
+        await Bun.sleep(5_000)
         await api.guilds.unbanUser(
           guildId,
           userId,
-          { reason: "Triggered honeypot -> softban (kick)" }
+          { reason: "Triggered honeypot -> softban (kick) 2/4" }
+        );
+
+        // double unban setup? surely this gotta yeet them now??
+        await Bun.sleep(500)
+        await api.guilds.banUser(
+          guildId,
+          userId,
+          { delete_message_seconds: 3600 },
+          { reason: "Triggered honeypot -> softban (kick) 3/4" }
+        );
+        await Bun.sleep(5_000)
+        await api.guilds.unbanUser(
+          guildId,
+          userId,
+          { reason: "Triggered honeypot -> softban (kick) 4/4" }
         );
       } else {
         console.error("Unknown action in honeypot config:", config.action);
