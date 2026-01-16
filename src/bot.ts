@@ -4,7 +4,7 @@ import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment } from "./db";
-import { honeypotWarningMessage, honeypotUserDMMessage } from "./honeypot-warning-message";
+import { honeypotWarningMessage, honeypotUserDMMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
 
 const token = process.env.DISCORD_TOKEN;
@@ -217,7 +217,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       messageId,
       `honeypot:${CUSTOM_EMOJI_ID}`,
       // this really doesn’t matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
-      { signal: AbortSignal.timeout(500) }
+      { signal: AbortSignal.timeout(1000) }
     ).catch(() => null);
 
     if (config.action === 'disabled') return;
@@ -233,7 +233,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     let dmMessage: APIMessage | null = null;
     let isOwner = false;
     try {
-      const timeout = AbortSignal.timeout(1500);
+      const timeout = AbortSignal.timeout(2500);
       let guildName = `this server`;
       let guild = await getGuildInfo(api, guildId, timeout).catch(() => null);
       if (guild) {
@@ -271,7 +271,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           { reason: "Triggered honeypot -> softban (kick)" }
         );
         // maybe discord needs time to yeet their messages?
-        await Bun.sleep(10_000)
+        await Bun.sleep(60_000)
         await api.guilds.unbanUser(
           guildId,
           userId,
