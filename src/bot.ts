@@ -210,7 +210,9 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
     if (messageId) emojiReact = api.channels.addMessageReaction(
       channelId,
       messageId,
-      `honeypot:${CUSTOM_EMOJI_ID}`
+      `honeypot:${CUSTOM_EMOJI_ID}`,
+      // this really doesn't matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
+      { signal: AbortSignal.timeout(500) }
     ).catch(() => null);
 
     if (config.action === 'disabled') return;
@@ -261,6 +263,8 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
           { delete_message_seconds: 3600 },
           { reason: "Triggered honeypot -> softban (kick)" }
         );
+        // maybe discord needs time to yeet their messages?
+        await Bun.sleep(10_000)
         await api.guilds.unbanUser(
           guildId,
           userId,
