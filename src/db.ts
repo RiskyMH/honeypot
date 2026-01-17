@@ -32,6 +32,15 @@ export async function initDb() {
       FOREIGN KEY (guild_id) REFERENCES honeypot_config(guild_id) ON DELETE CASCADE
     );
   `;
+  await db`
+    CREATE TABLE IF NOT EXISTS honeypot_messages (
+      guild_id TEXT PRIMARY KEY,
+      warning_message TEXT,
+      dm_message TEXT,
+      log_message TEXT,
+      FOREIGN KEY (guild_id) REFERENCES honeypot_config(guild_id) ON DELETE CASCADE
+    );
+  `;
 }
 
 export async function getConfig(guild_id: string): Promise<HoneypotConfig | null> {
@@ -108,4 +117,34 @@ export async function getGuildsWithExperiment(experiment: HoneypotConfig["experi
     action: ['softban', 'ban', 'disabled'].includes(row.action) ? row.action : 'softban',
     experiments: JSON.parse(row.experiments || '[]'),
   }));
+}
+export async function getHoneypotMessages(guild_id: string): Promise<{ warning_message: string | null; dm_message: string | null; log_message: string | null; }> {
+  const [row] = await db`SELECT * FROM honeypot_messages WHERE guild_id = ${guild_id}`;
+  if (!row) {
+    return {
+      warning_message: null,
+      dm_message: null,
+      log_message: null,
+    };
+  }
+  return {
+    warning_message: row.warning_message,
+    dm_message: row.dm_message,
+    log_message: row.log_message,
+  };
+}
+
+export async function setHoneypotMessages(guild_id: string, messages: { warning_message?: string | null; dm_message?: string | null; log_message?: string | null; }) {
+  if (messages.warning_message === null && messages.dm_message === null && messages.log_message === null) {
+    await db`DELETE FROM honeypot_messages WHERE guild_id = ${guild_id}`;
+    return;
+  }
+  await db`
+    INSERT INTO honeypot_messages (guild_id, warning_message, dm_message, log_message)
+    VALUES (${guild_id}, ${messages.warning_message}, ${messages.dm_message}, ${messages.log_message})
+    ON CONFLICT(guild_id) DO UPDATE SET
+      warning_message=excluded.warning_message,
+      dm_message=excluded.dm_message,
+      log_message=excluded.log_message
+  `;
 }

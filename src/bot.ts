@@ -1,9 +1,9 @@
 import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
-import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData } from "discord-api-types/v10";
-import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment } from "./db";
+import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData, RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
+import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle, TextInputStyle, SeparatorSpacingSize } from "discord-api-types/v10";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
 
@@ -222,6 +222,8 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
     if (config.action === 'disabled') return;
 
+    const customMessages = await getHoneypotMessages(guildId);
+
     const actionText = {
       ban: 'banned',
       kick: 'kicked',
@@ -243,7 +245,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       }
       if (!config.experiments.includes("no-dm")) {
         const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
-        const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner);
+        const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner, customMessages?.dm_message);
         const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
         dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
       }
@@ -309,14 +311,15 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       await api.channels.editMessage(
         config.honeypot_channel_id,
         config.honeypot_msg_id,
-        honeypotWarningMessage(moderatedCount, config.action)
+        honeypotWarningMessage(moderatedCount, config.action, customMessages?.warning_message)
       );
     } catch (err) { console.error(`Failed to update honeypot message: ${err}`); }
 
     try {
       if (config.log_channel_id && !failed && !isOwner) {
         await api.channels.createMessage(config.log_channel_id, {
-          content: `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
+          content: customMessages?.log_message?.replaceAll("{{user:ping}}", `<@${userId}>`).replaceAll("{{action:text}}", actionText).replaceAll("{{honeypot:channel:ping}}", `<#${config.honeypot_channel_id}>`)
+            || `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
           allowed_mentions: {}
         });
       } else if (isOwner && !config.experiments.includes("no-warning-msg")) {
@@ -537,7 +540,8 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       if (!newConfig.experiments.includes("no-warning-msg")) {
         try {
           const count = await getModeratedCount(guildId);
-          const messageBody = honeypotWarningMessage(count, newConfig.action);
+          const customMessages = await getHoneypotMessages(guildId);
+          const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
           if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
             const msg = await api.channels.createMessage(
               newConfig.honeypot_channel_id,
@@ -629,6 +633,166 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         await randomChannelNameExperiment(guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
           .catch((err) => console.error(`Failed to run random channel name experiment immediately after enabling: ${err}`))
       }
+      return;
+    }
+
+    // slash command handler: show modal
+    if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot-messages") {
+      let config = await getHoneypotMessages(guildId);
+
+      const modal: APIModalInteractionResponseCallbackData = {
+        title: "Honeypot's Messages",
+        custom_id: `honeypot_messages_modal`,
+        components: [
+          {
+            type: ComponentType.TextDisplay,
+            content: "Set custom messages for the honeypot bot:\n" +
+              "-# - You can use the variables in your messages shown in template/default text\n" +
+              "-# - If you leave the textbox empty, then it'll reset to default\n" +
+              "-# - Make sure to keep the messages clear and informative!"
+          },
+          {
+            type: ComponentType.Label,
+            label: "Honeypot Warning",
+            description: "This is the message shown in the honeypot channel",
+            component: {
+              type: ComponentType.TextInput,
+              custom_id: "honeypot_warning",
+              style: TextInputStyle.Paragraph,
+              min_length: 10,
+              max_length: 1500,
+              required: false,
+              value: config?.warning_message || "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in {{action:text}}.",
+            },
+          },
+          {
+            type: ComponentType.Label,
+            label: "Honeypot DM Message",
+            description: "This is the message sent to users via DM when they trigger the honeypot",
+            component: {
+              type: ComponentType.TextInput,
+              custom_id: "honeypot_dm_message",
+              style: TextInputStyle.Paragraph,
+              min_length: 10,
+              max_length: 1000,
+              required: false,
+              value: config?.dm_message || "## Honeypot Triggered\n\nYou have been **{{action:text}}** from {{server:name}} for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.",
+            },
+          },
+          {
+            type: ComponentType.Label,
+            label: "Log Message",
+            description: "This is the message shown in the log channel",
+            component: {
+              type: ComponentType.TextInput,
+              custom_id: "log_message",
+              style: TextInputStyle.Paragraph,
+              min_length: 10,
+              max_length: 500,
+              required: false,
+              value: config?.log_message || "User {{user:ping}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:ping}}.",
+            },
+          },
+        ]
+      };
+      await api.interactions.createModal(interaction.id, interaction.token, modal);
+      return;
+    }
+
+    // modal submit handler: update config from modal values
+    else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_messages_modal`) {
+      const newMessages: Awaited<ReturnType<typeof getHoneypotMessages>> = {
+        dm_message: null,
+        warning_message: null,
+        log_message: null,
+      }
+
+      for (const label of interaction.data.components) {
+        if (label.type !== ComponentType.Label) continue;
+        const c = (label).component ?? label;
+        if (!c) continue;
+
+        if (c.type === ComponentType.TextInput) {
+          if (c.custom_id === "honeypot_warning" && c.value.length) newMessages.warning_message = c.value;
+          if (c.custom_id === "honeypot_dm_message" && c.value.length) newMessages.dm_message = c.value;
+          if (c.custom_id === "log_message" && c.value.length) newMessages.log_message = c.value;
+        }
+      }
+
+      const config = await getConfig(guildId);
+      if (config?.honeypot_channel_id && config?.honeypot_msg_id) {
+        try {
+          const guildModeratedCount = await getModeratedCount(guildId);
+          await api.channels.editMessage(
+            config.honeypot_channel_id,
+            config.honeypot_msg_id,
+            honeypotWarningMessage(guildModeratedCount, config.action, newMessages.warning_message)
+          );
+        } catch (err) {
+          await api.interactions.reply(interaction.id, interaction.token, {
+            content: `There was a problem updating the honeypot warning message in <#${config.honeypot_channel_id}>. Please check my permissions.\n-# Your custom messages have not been saved.`,
+            allowed_mentions: {},
+            flags: MessageFlags.Ephemeral,
+          });
+
+          return
+        }
+      }
+
+
+      await api.interactions.reply(interaction.id, interaction.token, {
+        flags: MessageFlags.IsComponentsV2,
+        components: [
+          {
+            type: ComponentType.TextDisplay,
+            content: "**Honeypot messages updated!**",
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: newMessages.warning_message ? "Warning Message" : "Warning Message: *(Using default)*",
+          },
+          newMessages.warning_message && {
+            type: ComponentType.Container,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: newMessages.warning_message
+              }
+            ],
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: newMessages.dm_message ? "DM Message" : "DM Message: *(Using default)*",
+          },
+          newMessages.dm_message && {
+            type: ComponentType.Container,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: newMessages.dm_message
+              }
+            ],
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: newMessages.log_message ? "Log Message" : "Log Message: *(Using default)*",
+          },
+          newMessages.log_message && {
+            type: ComponentType.Container,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: newMessages.log_message
+              }
+            ],
+          },
+        ].filter(e => !!e),
+
+        allowed_mentions: {},
+      } as RESTPostAPIChannelMessageJSONBody);
+
+      await setHoneypotMessages(guildId, newMessages);
+
       return;
     }
 
@@ -790,6 +954,17 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
       // this command opens a modal for configuring the honeypot
       name: "honeypot",
       description: "Configure honeypot settings",
+      type: ApplicationCommandType.ChatInput,
+      options: [],
+      default_member_permissions:
+        (PermissionFlagsBits.ManageGuild | PermissionFlagsBits.BanMembers | PermissionFlagsBits.ModerateMembers | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels).toString(),
+      integration_types: [ApplicationIntegrationType.GuildInstall],
+      contexts: [InteractionContextType.Guild],
+    },
+    {
+      // this command opens a modal for configuring the messages
+      name: "honeypot-messages",
+      description: "Configure honeypot messages",
       type: ApplicationCommandType.ChatInput,
       options: [],
       default_member_permissions:

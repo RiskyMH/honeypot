@@ -3,7 +3,8 @@ import type { HoneypotConfig } from "./db";
 
 export function honeypotWarningMessage(
   moderatedCount: number = 0,
-  action: HoneypotConfig["action"] = 'softban'
+  action: HoneypotConfig["action"] = 'softban',
+  customText?: string | null
 ): RESTPostAPIChannelMessageJSONBody {
   const actionTextMap = {
     ban: { text: 'an immediate ban', label: 'Bans' },
@@ -25,7 +26,8 @@ export function honeypotWarningMessage(
             components: [
               {
                 type: ComponentType.TextDisplay,
-                content: `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in ${actionText}.`
+                content: customText?.replaceAll("{{action:text}}", actionText)
+                  || `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in ${actionText}.`
               }
             ],
             accessory: {
@@ -54,7 +56,7 @@ export function honeypotWarningMessage(
   };
 }
 
-export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string, isOwner = false): RESTPostAPIChannelMessageJSONBody {
+export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string, isOwner = false, customText?: string | null): RESTPostAPIChannelMessageJSONBody {
   return {
     flags: MessageFlags.IsComponentsV2,
     allowed_mentions: {},
@@ -68,7 +70,8 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
             components: [
               {
                 type: ComponentType.TextDisplay,
-                content: `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
+                content: customText?.replaceAll("{{action:text}}", actionText).replaceAll("{{server:name}}", guildName).replaceAll("{{honeypot:channel:link}}", link)
+                 || `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
               },
               {
                 type: ComponentType.TextDisplay,
@@ -84,6 +87,10 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
           }
         ]
       },
+      customText ? {
+        type: ComponentType.TextDisplay,
+        content: `-# This is a custom message from the owners of ${guildName}.`
+      } : null,
       isOwner ? {
         type: ComponentType.TextDisplay,
         content: `-# This is an example message: as the owner you can’t be ${actionText}.`
