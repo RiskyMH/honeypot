@@ -27,7 +27,7 @@ export function honeypotWarningMessage(
               {
                 type: ComponentType.TextDisplay,
                 content: customText?.replaceAll("{{action:text}}", actionText)
-                  || `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in ${actionText}.`
+                  || `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **${actionText}**.`
               }
             ],
             accessory: {

@@ -662,7 +662,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               min_length: 10,
               max_length: 1500,
               required: false,
-              value: config?.warning_message || "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in {{action:text}}.",
+              value: config?.warning_message || "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **{{action:text}}**.",
             },
           },
           {
