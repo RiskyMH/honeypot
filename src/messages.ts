@@ -56,9 +56,17 @@ export function honeypotWarningMessage(
   };
 }
 
-export const defauultHoneypotWarningMessage = "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **{{action:text}}**.";
+export const defaultHoneypotWarningMessage = "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **{{action:text}}**.";
 
-export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string, isOwner = false, customText?: string | null): RESTPostAPIChannelMessageJSONBody {
+const pastTenseActionText = {
+  ban: 'banned',
+  kick: 'kicked',
+  softban: 'kicked',
+  disabled: '???it is disabled???'
+} as const
+export function honeypotUserDMMessage(action: HoneypotConfig["action"], guildName: string, guildInvite: string | null | undefined, link: string, isOwner = false, customText?: string | null, isExample = false): RESTPostAPIChannelMessageJSONBody {
+  const actionText = pastTenseActionText[action] || '???unknown action???';
+  const guildNameFormatted = guildInvite ? `[${guildName}](${guildInvite})` : `${guildName}`;
   return {
     flags: MessageFlags.IsComponentsV2,
     allowed_mentions: {},
@@ -72,8 +80,8 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
             components: [
               {
                 type: ComponentType.TextDisplay,
-                content: customText?.replaceAll("{{action:text}}", actionText).replaceAll("{{server:name}}", guildName).replaceAll("{{honeypot:channel:link}}", link)
-                  || `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
+                content: customText?.replaceAll("{{action:text}}", actionText).replaceAll("{{server:name}}", guildNameFormatted).replaceAll("{{honeypot:channel:link}}", link)
+                  || `## Honeypot Triggered\n\nYou have been **${actionText}** from **${guildNameFormatted}** for sending a message in the [honeypot](${link}) channel.`
               },
               {
                 type: ComponentType.TextDisplay,
@@ -89,16 +97,29 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
           }
         ]
       },
-      customText ? {
+      isExample ? {
         type: ComponentType.TextDisplay,
-        content: `-# This is a custom message from the owners of ${guildName}.`
-      } : null,
-      isOwner ? {
+        content: `-# This is an example message so you can see your members will see`
+      } : customText ? {
+        type: ComponentType.TextDisplay,
+        content: `-# This is a custom message from the owners of "${guildName}".`
+      } : isOwner ? {
         type: ComponentType.TextDisplay,
         content: `-# This is an example message: as the owner you can’t be ${actionText}.`
-      } : null
+      } : null,
     ].filter(Boolean) as any[],
   };
 }
 
-export const defaultHoneypotUserDMMessage = "## Honeypot Triggered\n\nYou have been **{{action:text}}** from {{server:name}} for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.";
+export const defaultHoneypotUserDMMessage = "## Honeypot Triggered\n\nYou have been **{{action:text}}** from **{{server:name}}** for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.";
+
+export function logActionMessage(userId: string, honeypotChannelId: string, action: HoneypotConfig["action"], customText?: string | null): RESTPostAPIChannelMessageJSONBody {
+  const actionText = pastTenseActionText[action] || '???unknown action???';
+  return {
+    allowed_mentions: {},
+    content: customText?.replaceAll("{{user:ping}}", `<@${userId}>`).replaceAll("{{action:text}}", actionText).replaceAll("{{honeypot:channel:ping}}", `<#${honeypotChannelId}>`)
+      || `User <@${userId}> was ${actionText} for triggering the honeypot in <#${honeypotChannelId}>.`,
+  };
+}
+
+export const defaultLogActionMessage = "User {{user:ping}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:ping}}."

@@ -4,7 +4,7 @@ import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData, RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle, TextInputStyle } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages } from "./db";
-import { honeypotWarningMessage, honeypotUserDMMessage, defauultHoneypotWarningMessage, defaultHoneypotUserDMMessage } from "./messages";
+import { honeypotWarningMessage, honeypotUserDMMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, logActionMessage, defaultLogActionMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
 
 const token = process.env.DISCORD_TOKEN;
@@ -198,7 +198,7 @@ client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) =>
 const guildCache = new Map<string, { name: string, ownerId: string, vanityInviteCode: string | null }>();
 const getGuildInfo = async (api: API, guildId: string, signal?: AbortSignal) => {
   if (guildCache.has(guildId)) return guildCache.get(guildId)!;
-  const guild = await api.guilds.get(guildId, { signal });
+  const guild = await api.guilds.get(guildId, undefined, { signal });
   const info = { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code || null };
   guildCache.set(guildId, info);
   return info;
@@ -224,28 +224,23 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
     const customMessages = await getHoneypotMessages(guildId);
 
-    const actionText = {
-      ban: 'banned',
-      kick: 'kicked',
-      softban: 'kicked',
-      disabled: '???it is disabled???'
-    }[config.action] || '???unknown action???';
-
     // should DM user first before banning so that discord has less reason to block it
     let dmMessage: APIMessage | null = null;
     let isOwner = false;
     try {
       const timeout = AbortSignal.timeout(2500);
-      let guildName = `this server`;
       let guild = await getGuildInfo(api, guildId, timeout).catch(() => null);
-      if (guild) {
-        guildName = `**${guild.name}**`;
-        if (guild.vanityInviteCode) guildName = `[${guildName}](https://discord.gg/${guild.vanityInviteCode})`;
-        if (guild.ownerId === userId) isOwner = true;
-      }
+      isOwner = guild?.ownerId === userId;
       if (!config.experiments.includes("no-dm")) {
         const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
-        const dmContent = honeypotUserDMMessage(actionText, guildName, config.action, link, isOwner, customMessages?.dm_message);
+        const dmContent = honeypotUserDMMessage(
+          config.action,
+          guild?.name ?? guildId!,
+          guild?.vanityInviteCode ? `https://discord.gg/${guild.vanityInviteCode}` : undefined,
+          link,
+          isOwner,
+          customMessages?.dm_message
+        );
         const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
         dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
       }
@@ -317,11 +312,9 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
     try {
       if (config.log_channel_id && !failed && !isOwner) {
-        await api.channels.createMessage(config.log_channel_id, {
-          content: customMessages?.log_message?.replaceAll("{{user:ping}}", `<@${userId}>`).replaceAll("{{action:text}}", actionText).replaceAll("{{honeypot:channel:ping}}", `<#${config.honeypot_channel_id}>`)
-            || `User <@${userId}> was ${actionText} for triggering the honeypot in <#${config.honeypot_channel_id}>.`,
-          allowed_mentions: {}
-        });
+        await api.channels.createMessage(config.log_channel_id,
+          logActionMessage(userId, config.honeypot_channel_id, config.action, customMessages?.log_message)
+        );
       } else if (isOwner && !config.experiments.includes("no-warning-msg")) {
         await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
           content: `⚠️ User <@${userId}> triggered the honeypot, but they are the **server owner** so I cannot ${config.action} them.\n-# In anycase **ensure my role is higher** than people’s highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
@@ -662,7 +655,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               min_length: 10,
               max_length: 1500,
               required: false,
-              value: config?.warning_message || defauultHoneypotWarningMessage,
+              value: config?.warning_message || defaultHoneypotWarningMessage,
             },
           },
           {
@@ -690,7 +683,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               min_length: 10,
               max_length: 500,
               required: false,
-              value: config?.log_message || "User {{user:ping}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:ping}}.",
+              value: config?.log_message || defaultLogActionMessage,
             },
           },
         ]
@@ -714,14 +707,13 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
         if (c.type === ComponentType.TextInput) {
           if (c.custom_id === "honeypot_warning" && c.value.length) {
-            if (c.value !== defauultHoneypotWarningMessage) newMessages.warning_message = c.value;
+            if (c.value !== defaultHoneypotWarningMessage) newMessages.warning_message = c.value;
           }
           if (c.custom_id === "honeypot_dm_message" && c.value.length) {
             if (c.value !== defaultHoneypotUserDMMessage) newMessages.dm_message = c.value;
           }
           if (c.custom_id === "log_message" && c.value.length) {
-            const defaultLogMessage = "User {{user:ping}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:ping}}.";
-            if (c.value !== defaultLogMessage) newMessages.log_message = c.value;
+            if (c.value !== defaultLogActionMessage) newMessages.log_message = c.value;
           };
         }
       }
@@ -745,7 +737,6 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           return
         }
       }
-
 
       await api.interactions.reply(interaction.id, interaction.token, {
         flags: MessageFlags.IsComponentsV2,
@@ -798,7 +789,34 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         allowed_mentions: {},
       } as RESTPostAPIChannelMessageJSONBody);
 
+      const existingMessages = await getHoneypotMessages(guildId);
       await setHoneypotMessages(guildId, newMessages);
+
+      if (newMessages.dm_message && existingMessages?.dm_message !== newMessages.dm_message) {
+        const timeout = AbortSignal.timeout(10_000);
+        const userId = (interaction.user || interaction.member?.user)?.id;
+        if (userId) {
+          try {
+            const server = await getGuildInfo(api, guildId, timeout);
+            const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
+            await api.channels.createMessage(
+              dmChannel,
+              honeypotUserDMMessage(
+                config?.action || "softban",
+                server?.name ?? guildId!,
+                server.vanityInviteCode ? `https://discord.gg/${server.vanityInviteCode}` : undefined,
+                `https://discord.com/channels/${guildId}/${config?.honeypot_channel_id || ""}/${config?.honeypot_msg_id || ""}`,
+                false,
+                newMessages.dm_message,
+                true
+              ),
+              { signal: timeout }
+            );
+          } catch (err) {
+            console.error("Error sending example DM message:", err);
+          }
+        }
+      }
 
       return;
     }
