@@ -2,9 +2,9 @@ import { Client, type API } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData, RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
-import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, GatewayOpcodes, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle, TextInputStyle, SeparatorSpacingSize } from "discord-api-types/v10";
+import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle, TextInputStyle } from "discord-api-types/v10";
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages } from "./db";
-import { honeypotWarningMessage, honeypotUserDMMessage } from "./messages";
+import { honeypotWarningMessage, honeypotUserDMMessage, defauultHoneypotWarningMessage, defaultHoneypotUserDMMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
 
 const token = process.env.DISCORD_TOKEN;
@@ -662,7 +662,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               min_length: 10,
               max_length: 1500,
               required: false,
-              value: config?.warning_message || "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **{{action:text}}**.",
+              value: config?.warning_message || defauultHoneypotWarningMessage,
             },
           },
           {
@@ -676,7 +676,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               min_length: 10,
               max_length: 1000,
               required: false,
-              value: config?.dm_message || "## Honeypot Triggered\n\nYou have been **{{action:text}}** from {{server:name}} for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.",
+              value: config?.dm_message || defaultHoneypotUserDMMessage,
             },
           },
           {
@@ -713,9 +713,16 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         if (!c) continue;
 
         if (c.type === ComponentType.TextInput) {
-          if (c.custom_id === "honeypot_warning" && c.value.length) newMessages.warning_message = c.value;
-          if (c.custom_id === "honeypot_dm_message" && c.value.length) newMessages.dm_message = c.value;
-          if (c.custom_id === "log_message" && c.value.length) newMessages.log_message = c.value;
+          if (c.custom_id === "honeypot_warning" && c.value.length) {
+            if (c.value !== defauultHoneypotWarningMessage) newMessages.warning_message = c.value;
+          }
+          if (c.custom_id === "honeypot_dm_message" && c.value.length) {
+            if (c.value !== defaultHoneypotUserDMMessage) newMessages.dm_message = c.value;
+          }
+          if (c.custom_id === "log_message" && c.value.length) {
+            const defaultLogMessage = "User {{user:ping}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:ping}}.";
+            if (c.value !== defaultLogMessage) newMessages.log_message = c.value;
+          };
         }
       }
 

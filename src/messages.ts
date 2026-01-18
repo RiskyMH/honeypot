@@ -56,6 +56,8 @@ export function honeypotWarningMessage(
   };
 }
 
+export const defauultHoneypotWarningMessage = "## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **{{action:text}}**.";
+
 export function honeypotUserDMMessage(actionText: string, guildName: string, action: string, link: string, isOwner = false, customText?: string | null): RESTPostAPIChannelMessageJSONBody {
   return {
     flags: MessageFlags.IsComponentsV2,
@@ -71,7 +73,7 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
               {
                 type: ComponentType.TextDisplay,
                 content: customText?.replaceAll("{{action:text}}", actionText).replaceAll("{{server:name}}", guildName).replaceAll("{{honeypot:channel:link}}", link)
-                 || `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
+                  || `## Honeypot Triggered\n\nYou have been **${actionText}** from ${guildName} for sending a message in the [honeypot](${link}) channel.`
               },
               {
                 type: ComponentType.TextDisplay,
@@ -98,3 +100,5 @@ export function honeypotUserDMMessage(actionText: string, guildName: string, act
     ].filter(Boolean) as any[],
   };
 }
+
+export const defaultHoneypotUserDMMessage = "## Honeypot Triggered\n\nYou have been **{{action:text}}** from {{server:name}} for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.";
