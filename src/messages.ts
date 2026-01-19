@@ -43,7 +43,7 @@ export function honeypotWarningMessage(
               {
                 type: ComponentType.Button,
                 style: ButtonStyle.Secondary,
-                label: `${labelText}: ${moderatedCount}`,
+                label: `${labelText}: ${moderatedCount.toLocaleString()}`,
                 custom_id: "moderated_count_button",
                 disabled: true,
                 emoji: { name: "🍯" }

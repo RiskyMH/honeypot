@@ -466,7 +466,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       // shouldn’t happen, but just in case
       if (!newConfig.honeypot_channel_id) {
         await api.interactions.reply(interaction.id, interaction.token, {
-          content: `Honeypot channel is required! No changes have been made.`,
+          content: "Honeypot channel is required! No changes have been made.",
           allowed_mentions: {},
           flags: MessageFlags.Ephemeral,
         });
@@ -841,7 +841,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
                   "",
                   `Total servers: \`${totalGuilds.toLocaleString()}\``,
                   `Total moderations: \`${totalModerated.toLocaleString()}\``,
-                  `Times you've #honeypot'd: \`${(userModeratedCount || 0).toLocaleString()}\``,
+                  `Times you've been #honeypot'd: \`${(userModeratedCount || 0).toLocaleString()}\``,
                 ].join("\n"),
               },
               {
