@@ -599,7 +599,9 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       await setConfig({
         ...(prevConfig || {}),
         ...newConfig,
-        honeypot_msg_id: msgId || newConfig.honeypot_msg_id || prevConfig?.honeypot_msg_id || null,
+        honeypot_msg_id: (newConfig.experiments.includes("no-warning-msg") && !newConfig.honeypot_msg_id)
+          ? null
+          : (msgId || newConfig.honeypot_msg_id || prevConfig?.honeypot_msg_id || null),
       });
       await api.interactions.reply(interaction.id, interaction.token, {
         content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
