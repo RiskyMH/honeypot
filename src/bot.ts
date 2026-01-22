@@ -902,6 +902,7 @@ async function channelWarmerExperiment(guildId: string, channelId: string) {
     {
       content: `Keeping the honeypot channel active! ${CUSTOM_EMOJI}`,
       allowed_mentions: {},
+      flags: MessageFlags.SuppressNotifications,
     }
   );
   await Bun.sleep(50);
