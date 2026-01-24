@@ -3,7 +3,7 @@ import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
 import type { APIMessage, APIModalInteractionResponseCallbackData, GatewayGuildCreateDispatchData, RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
 import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType, MessageFlags, PresenceUpdateStatus, ActivityType, ComponentType, SelectMenuDefaultValueType, ApplicationCommandType, ApplicationIntegrationType, InteractionContextType, PermissionFlagsBits, ButtonStyle, TextInputStyle } from "discord-api-types/v10";
-import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages } from "./db";
+import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages, unsetHoneypotMsgs } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, logActionMessage, defaultLogActionMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
 
@@ -161,6 +161,15 @@ client.on(GatewayDispatchEvents.MessageDelete, async ({ data: message, api }) =>
     await unsetHoneypotMsg(message.guild_id, message.id);
   } catch (err) {
     console.error(`Error with MessageDelete handler: ${err}`);
+  }
+});
+
+client.on(GatewayDispatchEvents.MessageDeleteBulk, async ({ data: message, api }) => {
+  if (!message.guild_id) return;
+  try {
+    await unsetHoneypotMsgs(message.guild_id, message.ids);
+  } catch (err) {
+    console.error(`Error with MessageDeleteBulk handler: ${err}`);
   }
 });
 
