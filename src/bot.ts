@@ -120,7 +120,7 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
       msgId ||= await postWarning(api, channelId, applicationId!, await getModeratedCount(guild.id));
       setupSuccess = true;
     } catch (err) {
-      console.error(`Failed to create/send honeypot message: ${err}`);
+      console.log(`Failed to create/send honeypot message: ${err}`);
     }
     await setConfig({
       guild_id: guild.id,
@@ -137,11 +137,11 @@ client.on(GatewayDispatchEvents.GuildCreate, async ({ data: guild, api }) => {
           allowed_mentions: {}
         });
       } catch (err) {
-        console.error(`Failed to send welcome/setup message: ${err}`);
+        console.log(`Failed to send welcome/setup message: ${err}`);
       }
     }
   } catch (err) {
-    console.error(`Error with GuildCreate handler: ${err}`);
+    console.log(`Error with GuildCreate handler: ${err}`);
   }
 });
 
@@ -317,7 +317,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
         config.honeypot_msg_id,
         honeypotWarningMessage(moderatedCount, config.action, customMessages?.warning_message)
       );
-    } catch (err) { console.error(`Failed to update honeypot message: ${err}`); }
+    } catch (err) { console.log(`Failed to update honeypot message: ${err}`); }
 
     try {
       if (config.log_channel_id && !failed && !isOwner) {
@@ -338,7 +338,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
       }
     } catch (err) {
       // somewhat chance the channel is deleted or the bot lost perms to send messages there
-      console.error(`Failed to send log message (MessageCreate handler): ${err}`);
+      console.log(`Failed to send log message (MessageCreate handler): ${err}`);
     }
   } catch (err) {
     console.error(`Error with MessageCreate handler: ${err}`);
@@ -565,7 +565,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               msgId = msg.id;
             }
           } else {
-            console.error("No previous honeypot message ID found to edit.");
+            console.log("No previous honeypot message ID found to edit.");
           }
         } catch (err) {
           await api.interactions.reply(interaction.id, interaction.token, {
@@ -627,15 +627,31 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
       // run any experiments that were just enabled immediately to show user it works
       if (!prevConfig?.experiments.includes("channel-warmer") && newConfig.experiments.includes("channel-warmer")) {
-        await channelWarmerExperiment(guildId, newConfig.honeypot_channel_id!)
-          .catch((err) => console.error(`Failed to run channel warmer experiment immediately after enabling: ${err}`));
+        try {
+          await channelWarmerExperiment(guildId, newConfig.honeypot_channel_id!)
+        } catch (err) {
+          if (newConfig.log_channel_id) {
+            return await api.channels.createMessage(newConfig.log_channel_id, {
+              content: `There was a problem sending a message to the <#${newConfig.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+              allowed_mentions: {},
+            });
+          }
+        }
       }
       if (
         (!prevConfig?.experiments.includes("random-channel-name") && newConfig.experiments.includes("random-channel-name"))
         || (!prevConfig?.experiments.includes("random-channel-name-chaos") && newConfig.experiments.includes("random-channel-name-chaos"))
       ) {
-        await randomChannelNameExperiment(guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
-          .catch((err) => console.error(`Failed to run random channel name experiment immediately after enabling: ${err}`))
+        try {
+          await randomChannelNameExperiment(guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
+        } catch (err) {
+          if (newConfig.log_channel_id) {
+            return await api.channels.createMessage(newConfig.log_channel_id, {
+              content: `There was a problem updating the <#${newConfig.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+              allowed_mentions: {},
+            });
+          }
+        }
       }
       return;
     }
@@ -824,7 +840,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               { signal: timeout }
             );
           } catch (err) {
-            console.error("Error sending example DM message:", err);
+            console.log(`Error sending example DM message: ${err}`);
           }
         }
       }
@@ -891,7 +907,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
 
     return;
   } catch (err) {
-    console.error("Error with InteractionCreate handler:", err);
+    console.error(`Error with InteractionCreate handler: ${err}`);
   }
 });
 
@@ -953,7 +969,7 @@ runAtMidnightUTC(async () => {
         await channelWarmerExperiment(config.guild_id, config.honeypot_channel_id!);
         await Bun.sleep(1_000);
       } catch (err) {
-        console.error(`Channel warmer experiment execution failed for guild:`, err);
+        console.log(`Channel warmer experiment execution failed for guild: ${err}`);
       }
     }
   };
@@ -971,7 +987,7 @@ runAtMidnightUTC(async () => {
         )
         await Bun.sleep(1_000);
       } catch (err) {
-        console.error(`Random channel name experiment execution failed for guild:`, err);
+        console.log(`Random channel name experiment execution failed for guild: ${err}`);
       }
     }
   };
