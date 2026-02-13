@@ -456,8 +456,8 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0]!;
         }
         if (c.type === ComponentType.RadioGroup) {
-          if (c.custom_id === "honeypot_action") {
-            if (["kick", "ban", "disabled"].includes(c.value!)) newConfig.action = c.value as any;
+          if (c.custom_id === "honeypot_action" && c.value) {
+            if (["kick", "ban", "disabled"].includes(c.value)) newConfig.action = c.value as any;
           }
         }
         if (c.type === ComponentType.StringSelect) {
