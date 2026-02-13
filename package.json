@@ -9,12 +9,15 @@
     "dev": "bun --watch src/bot.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5"
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@discordjs/core": "^2.4.0",
     "@discordjs/rest": "^2.6.0",
-    "discord-api-types": "^0.38.37"
+    "discord-api-types": "^0.38.38"
+  },
+  "overrides": {
+    "discord-api-types": "^0.38.38"
   }
 }

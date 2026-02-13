@@ -400,16 +400,13 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
             label: "Action",
             description: "What should the bot do to message author?",
             component: {
-              type: ComponentType.StringSelect,
+              type: ComponentType.RadioGroup,
               custom_id: "honeypot_action",
-              placeholder: "Softban (kick)",
               options: [
-                { label: "Softban (kick)", value: "softban", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "softban" || (config.action as any) === "kick" },
+                { label: "Softban (kick)", value: "softban", description: "Bans & unbans to delete last 1hr of messages", default: config.action === "softban" || (config.action as any) === "kick" || !config.action },
                 { label: "Ban", value: "ban", description: "Permanently bans the user to also delete last 1hr of messages", default: config.action === "ban" },
-                { label: "Disabled", value: "disabled", description: "Don’t do anything", default: config.action === "disabled" }
+                { label: "Disabled", value: "disabled", /*description: "Don’t do anything",*/ default: config.action === "disabled" }
               ],
-              min_values: 1,
-              max_values: 1,
               required: true,
             }
           },
@@ -458,10 +455,12 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.honeypot_channel_id = c.values[0]!;
           if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0]!;
         }
-        if (c.type === ComponentType.StringSelect) {
-          if (c.custom_id === "honeypot_action" && Array.isArray(c.values) && c.values.length > 0) {
-            if (["kick", "ban", "disabled"].includes(c.values[0]!)) newConfig.action = c.values[0] as any;
+        if (c.type === ComponentType.RadioGroup) {
+          if (c.custom_id === "honeypot_action") {
+            if (["kick", "ban", "disabled"].includes(c.value!)) newConfig.action = c.value as any;
           }
+        }
+        if (c.type === ComponentType.StringSelect) {
           if (c.custom_id === "honeypot_experiments" && Array.isArray(c.values)) {
             for (const val of c.values) {
               if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer"].includes(val)) {
