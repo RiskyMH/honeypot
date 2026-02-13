@@ -712,6 +712,16 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               value: config?.log_message || defaultLogActionMessage,
             },
           },
+          {
+            type: ComponentType.Label,
+            label: "Reset All Messages",
+            description: "Nothing you changed here will persist. This will reset all messages to their default values.",
+            component: {
+              type: ComponentType.Checkbox,
+              custom_id: "reset_messages",
+              default: false
+            },
+          },
         ]
       };
       await api.interactions.createModal(interaction.id, interaction.token, modal);
@@ -725,11 +735,12 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         warning_message: null,
         log_message: null,
       }
+      let reset = false;
 
       for (const label of interaction.data.components) {
         if (label.type !== ComponentType.Label) continue;
         const c = (label).component ?? label;
-        if (!c) continue;
+        if (!c || reset) continue;
 
         if (c.type === ComponentType.TextInput) {
           if (c.custom_id === "honeypot_warning" && c.value.length) {
@@ -741,6 +752,14 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
           if (c.custom_id === "log_message" && c.value.length) {
             if (c.value !== defaultLogActionMessage) newMessages.log_message = c.value;
           };
+        }
+        if (c.type === ComponentType.Checkbox) {
+          if (c.custom_id === "reset_messages" && c.value) {
+            reset = true;
+            newMessages.dm_message = null;
+            newMessages.warning_message = null;
+            newMessages.log_message = null;
+          }
         }
       }
 
