@@ -7,7 +7,7 @@
   "scripts": {
     "start": "bun src/bot.ts",
     "dev": "bun --watch src/bot.ts",
-    "build:standalone": "bun build src/bot.ts --outfile dist/bot --minify --target=bun --bytecode --production --compile --format=esm",
+    "build:standalone": "bun build src/bot.ts --outfile dist/bot --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
     "docker:build": "docker compose build",
     "docker:deploy": "docker compose pull && docker compose up -d",
     "docker:logs": "docker compose logs -f"

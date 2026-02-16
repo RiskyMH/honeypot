@@ -101,8 +101,8 @@ export async function unsetHoneypotMsgs(guildId: string, messageIds: string[]) {
 export async function getStats(): Promise<{ totalGuilds: number; totalModerated: number; }> {
   const result = await db`SELECT (SELECT COUNT(*) FROM honeypot_config) AS config_count, (SELECT MAX(id) FROM honeypot_events) AS event_count;`;
   return {
-    totalGuilds: result[0].config_count as number,
-    totalModerated: result[0].event_count as number,
+    totalGuilds: result[0].config_count || 0 as number,
+    totalModerated: result[0].event_count || 0 as number,
   };
 }
 
