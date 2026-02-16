@@ -6,7 +6,10 @@
   "main": "src/bot.ts",
   "scripts": {
     "start": "bun src/bot.ts",
-    "dev": "bun --watch src/bot.ts"
+    "dev": "bun --watch src/bot.ts",
+    "build:standalone": "bun build src/bot.ts --outfile dist/bot --minify --target=bun --bytecode --production --compile --format=esm",
+    "docker:build": "docker build -t ghcr.io/riskymh/honeypot:latest .",
+    "docker:deploy": "docker pull ghcr.io/riskymh/honeypot:latest && docker compose up -d"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
@@ -15,9 +18,9 @@
   "dependencies": {
     "@discordjs/core": "^2.4.0",
     "@discordjs/rest": "^2.6.0",
-    "discord-api-types": "^0.38.38"
+    "discord-api-types": "^0.38.39"
   },
   "overrides": {
-    "discord-api-types": "^0.38.38"
+    "discord-api-types": "^0.38.39"
   }
 }

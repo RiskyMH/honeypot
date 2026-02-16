@@ -1,0 +1,23 @@
+services:
+   honeypot:
+     image: ghcr.io/riskymh/honeypot:latest
+     build: .
+     restart: unless-stopped
+     init: true
+     extra_hosts:
+       - "host.docker.internal:host-gateway"
+     environment:
+       DATABASE_URL: ${DATABASE_URL:-sqlite:///data/honeypot.db}
+       DISCORD_TOKEN: ${DISCORD_TOKEN:?REQUIRED}
+       NODE_ENV: production
+     volumes:
+        - data:/data
+     deploy:
+       resources:
+         limits:
+           memory: 256M
+         reservations:
+           memory: 128M
+
+volumes:
+  data:
