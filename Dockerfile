@@ -20,4 +20,4 @@ COPY --from=builder /app/dist/bot ./bot
 
 ENV NODE_ENV=production
 
-CMD ["./bot"]
+CMD ["./bot", "--title=Honeypot"]

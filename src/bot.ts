@@ -11,6 +11,8 @@ const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
 let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet most didn’t know this fact about discord tokens
 
+process.title = "Honeypot Bot (riskymh.dev)";
+
 await initDb();
 
 const EMOJI = "🍯";
