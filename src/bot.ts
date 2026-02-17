@@ -6,6 +6,7 @@ import { InteractionType, GatewayDispatchEvents, GatewayIntentBits, ChannelType,
 import { initDb, getConfig, setConfig, logModerateEvent, getModeratedCount, deleteConfig, type HoneypotConfig, unsetHoneypotChannel, unsetLogChannel, unsetHoneypotMsg, getStats, getUserModeratedCount, getGuildsWithExperiment, getHoneypotMessages, setHoneypotMessages, unsetHoneypotMsgs } from "./db";
 import { honeypotWarningMessage, honeypotUserDMMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, logActionMessage, defaultLogActionMessage } from "./messages";
 import randomChannelNames from "./random-channel-names.yaml";
+import getBadWords from "./bad-words.macro" with { type: "macro" };
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
@@ -91,6 +92,12 @@ async function postWarning(api: API, channelId: string, applicationId: string, m
     const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
     return msg.id;
   }
+}
+
+const badWords = getBadWords() as any as string[];
+const containsBadWord = (text: string): string | null => {
+  const inputWords = text.toLowerCase().replace(/[^a-z0-9]/gi, ' ').split(/\W+/).filter(Boolean);
+  return inputWords.find(word => badWords.includes(word)) || null;
 }
 
 client.on(GatewayDispatchEvents.GuildDelete, async ({ data: guild, api }) => {
@@ -763,6 +770,19 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
             newMessages.log_message = null;
           }
         }
+      }
+
+      // test that the messages are "safe" with rudimentary checks for bad words
+      const warningMsgSus = newMessages.warning_message ? containsBadWord(newMessages.warning_message) : false;
+      const dmMsgSus = newMessages.dm_message ? containsBadWord(newMessages.dm_message) : false;
+      const logMsgSus = newMessages.log_message ? containsBadWord(newMessages.log_message) : false;
+      if (warningMsgSus || dmMsgSus || logMsgSus) {
+        await api.interactions.reply(interaction.id, interaction.token, {
+          content: `One or more of your messages contain words that are not allowed on Discord. Please remove any inappropriate language and try again.\n-# No changes have been saved.`,
+          allowed_mentions: {},
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
       }
 
       const config = await getConfig(guildId);
