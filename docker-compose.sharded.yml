@@ -1,0 +1,95 @@
+services:
+   discord-ws:
+     image: ghcr.io/riskymh/honeypot-ws:latest
+     build: 
+       context: .
+       dockerfile: Dockerfile.ws
+     restart: unless-stopped
+     init: true
+     depends_on:
+       - discord-events # seems backwards, but we need to configure our "events we want to receive"
+       - redis
+     environment:
+       DISCORD_TOKEN: ${DISCORD_TOKEN:?REQUIRED}
+       NODE_ENV: production
+       FORCE_COLOR: 1
+       REDIS_URL: redis+unix:///redis/redis.sock
+       REPLICA_ID: '{{.Task.Slot}}' 
+     volumes:
+        - redis:/redis
+     deploy:
+      # todo: make this possible, but rn it just makes double events 
+      #  replicas: ${WS_REPLICAS:-1}
+       resources:
+         limits:
+           memory: 256M
+         reservations:
+           memory: 64M
+       update_config:
+         order: stop-first
+         failure_action: rollback
+         max_failure_ratio: 0
+         monitor: 5s
+       restart_policy:
+         condition: any
+
+   discord-events:
+     image: ghcr.io/riskymh/honeypot-events:latest
+     build: 
+       context: .
+       dockerfile: Dockerfile.events
+     restart: unless-stopped
+     init: true
+     depends_on:
+       - redis
+     environment:
+       DATABASE_URL: ${DATABASE_URL:-sqlite:///data/honeypot.sqlite}
+       DISCORD_TOKEN: ${DISCORD_TOKEN:?REQUIRED}
+       NODE_ENV: production
+       FORCE_COLOR: 1
+       REDIS_URL: redis+unix:///redis/redis.sock
+       REPLICA_ID: '{{.Task.Slot}}' 
+     volumes:
+        - data:/data
+        - redis:/redis
+     deploy:
+      # todo: make this possible, but rn we have dumb in mem cache, so it would cause problems if its not shared
+      #  replicas: ${EVENTS_REPLICAS:-1}
+       resources:
+         limits:
+           memory: 256M
+         reservations:
+           memory: 64M
+       update_config:
+         order: start-first
+         failure_action: rollback
+         max_failure_ratio: 0
+         monitor: 5s
+       restart_policy:
+         condition: any
+
+   redis:
+    image: redis:alpine
+    restart: always
+    command: ["redis-server", "--port", "0", "--unixsocket", "/redis/redis.sock", "--unixsocketperm", "777"]
+    volumes:
+      - redis-data:/data
+      - redis:/redis
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+        max_failure_ratio: 0
+        monitor: 5s
+
+
+volumes:
+  data:
+  redis:
+  redis-data:
+    driver: local

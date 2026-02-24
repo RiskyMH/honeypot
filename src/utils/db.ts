@@ -12,7 +12,7 @@ export type HoneypotConfig = {
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite");
 
 export async function initDb() {
-  await db`PRAGMA foreign_keys = ON;`.catch(() => { });
+  await db.unsafe("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;").catch(() => { });
   await db`
     CREATE TABLE IF NOT EXISTS honeypot_config (
       guild_id TEXT PRIMARY KEY,

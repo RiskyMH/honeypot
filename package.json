@@ -10,7 +10,15 @@
     "build:standalone": "bun build src/bot.ts --outfile dist/bot --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
     "docker:build": "docker compose build",
     "docker:deploy": "docker compose pull && docker compose up -d",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "-": "echo --spacer--",
+    "build:events:standalone": "bun build src/sharded/event-handler.ts --outfile dist/event-handler --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
+    "build:ws:standalone": "bun build src/sharded/discord-ws.ts --outfile dist/discord-ws --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
+    "build:*:standalone": "bun run build:standalone && bun run build:events:standalone && bun run build:ws:standalone",
+    "docker:swarm:deploy": "(docker swarm init || true) && bun --env-file=.env run docker stack deploy -c docker-compose.sharded.yml honeypot --detach=false",
+    "docker:swarm:build": "docker build -f Dockerfile.events -t ghcr.io/riskymh/honeypot-events:latest . && docker build -f Dockerfile.ws -t ghcr.io/riskymh/honeypot-ws:latest .",
+    "docker:logs:events": "docker service logs -tf honeypot_discord-events",
+    "docker:logs:ws": "docker service logs -tf honeypot_discord-ws"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
@@ -19,6 +27,7 @@
   "dependencies": {
     "@discordjs/core": "^2.4.0",
     "@discordjs/rest": "^2.6.0",
+    "@discordjs/ws": "^2.0.4",
     "discord-api-types": "^0.38.39"
   },
   "overrides": {
