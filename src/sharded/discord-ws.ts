@@ -24,7 +24,7 @@ const rest = new REST().setToken(token!);
 const getShards = async () => (await rest.get(Routes.gatewayBot()) as RESTGetAPIGatewayBotResult).shards;
 const getManager = (shards: number | null = null) => new WebSocketManager({
     token: token,
-    intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages | GatewayIntentBits.GuildMessageTyping,
+    intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
     rest,
     compression: CompressionMethod.ZlibNative,
     shardCount: shards,
