@@ -34,8 +34,6 @@ Options you can enable to avoid the bots better
 1. **Channel Warmer:** Keep the honeypot channel active (every day)
 1. **Random Channel Name:** Randomize the honeypot channel name (every day)
 1. **Random Channel Name (chaos):** Randomize the honeypot channel name with random characters (every day)
-1. **Timeout for Typing:** Timeout users (for 10sec) who are typing in the honeypot channel 
-   (i.e "warn" user that may want to be funny)
 1. **No Warning Msg:** Don’t include a warning message in the #honeypot channel
 1. **No DM:** Don’t DM the user that they triggered the honeypot
 

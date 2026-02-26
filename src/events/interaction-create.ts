@@ -5,7 +5,7 @@ import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotU
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID } from "../utils/constants";
-import { failedToDmUsers, failedToTimeoutMembers, getGuildInfo, notHoneypottedChannelIds } from "../utils/cache";
+import { failedToDmUsers, getGuildInfo, notHoneypottedChannelIds } from "../utils/cache";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
@@ -94,7 +94,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 options: [
                                     { label: "No Warning Msg", value: "no-warning-msg", description: "Don’t include a warning message in the #honeypot channel", default: config.experiments.includes("no-warning-msg") },
                                     { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
-                                    { label: "Timeout for Typing", value: "timeout-for-typing", description: "Timeout users (for 10sec) who are typing in the honeypot channel", default: config.experiments.includes("timeout-for-typing") },
+                                    // { label: "Timeout for Typing", value: "timeout-for-typing", description: "Timeout users (for 10sec) who are typing in the honeypot channel", default: config.experiments.includes("timeout-for-typing") },
                                     { label: "Channel Warmer", value: "channel-warmer", description: "Keep the honeypot channel active (every day)", default: config.experiments.includes("channel-warmer") },
                                     { label: "Random Channel Name", value: "random-channel-name", description: "Randomize the honeypot channel name (every day)", default: config.experiments.includes("random-channel-name") },
                                     { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
@@ -137,7 +137,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     if (c.type === ComponentType.StringSelect) {
                         if (c.custom_id === "honeypot_experiments" && Array.isArray(c.values)) {
                             for (const val of c.values) {
-                                if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer", "timeout-for-typing"].includes(val)) {
+                                if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer"].includes(val)) {
                                     newConfig.experiments.push(val as any);
                                 }
                             }
@@ -200,24 +200,6 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     if (usingChannelNameExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ManageChannels)) {
                         await api.interactions.reply(interaction.id, interaction.token, {
                             content: `I need the Manage Channels permission to enable the "Random Channel Name" experiment.\n-# No settings have been changed.`,
-                            allowed_mentions: {},
-                            flags: MessageFlags.Ephemeral,
-                        });
-                        return;
-                    }
-
-                    const usingTimeoutForTypingExperiment = newConfig.experiments.includes("timeout-for-typing");
-                    if (usingTimeoutForTypingExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ModerateMembers)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
-                            content: `I need the Moderate Members permission to enable the "Timeout for Typing" experiment.\n-# No settings have been changed.`,
-                            allowed_mentions: {},
-                            flags: MessageFlags.Ephemeral,
-                        });
-                        return;
-                    }
-                    if (usingTimeoutForTypingExperiment && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.ModerateMembers)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
-                            content: `You need the Moderate Members permission to enable the "Timeout for Typing" experiment.\n-# No settings have been changed.`,
                             allowed_mentions: {},
                             flags: MessageFlags.Ephemeral,
                         });
@@ -344,7 +326,6 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 // a somewhat trigger to reset
                 notHoneypottedChannelIds.length = 0;
                 failedToDmUsers.length = 0;
-                failedToTimeoutMembers.length = 0;
                 return;
             }
 

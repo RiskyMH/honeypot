@@ -10,8 +10,5 @@ export const getGuildInfo = async (api: API | API2, guildId: string, signal?: Ab
   return info;
 };
 
-// guildId-userId, to prevent retrying to timeout members if the API fails (ie due to permissions)
-export const failedToTimeoutMembers = [] as `${string}-${string}`[];
-export const typingNotEnabledGuilds = [] as string[];
 export const notHoneypottedChannelIds = [] as string[];
 export const failedToDmUsers = [] as string[]; // userIds, to prevent retrying to DM users if the API fails (ie due to DMs closed)
