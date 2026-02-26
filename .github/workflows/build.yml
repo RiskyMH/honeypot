@@ -1,14 +1,46 @@
-name: Build
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-slim
+    name: Check for Changes
+    outputs:
+      main: ${{ steps.filter.outputs.main }}
+      events: ${{ steps.filter.outputs.events }}
+      ws: ${{ steps.filter.outputs.ws }}
+    steps:
+      - uses: actions/checkout@v4
+        fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        # base: ${{ github.ref }}
+        with:
+          filters: |
+            main:
+              - Dockerfile
+              - src/**
+              - package.json
+              - bun.lock
+            events:
+              - Dockerfile.events
+              - src/sharded/event-handler.ts
+              - src/**
+              - package.json
+              - bun.lock
+            ws:
+              - Dockerfile.ws
+              - src/sharded/discord-ws.ts
+              - src/utils/initial-presence.ts
+              # - package.json
+              # - bun.lock
+              # (if there is a meaningfull change to @discordjs/ws i'll manually trigger a build)
+
   docker-build:
     name: Build Docker (${{ matrix.platform_suffix }})
     runs-on: ${{ matrix.runner }}
@@ -38,8 +70,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push image (per-arch)
+      - name: "[Main Image] Build & push image"
         uses: docker/build-push-action@v6
+        if: ${{ needs.changes.outputs.main == 'true' || github.event_name == 'workflow_dispatch' }}
         with:
           context: .
           file: ./Dockerfile
@@ -47,6 +80,34 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ env.OWNER_LOWER }}/honeypot:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+      - name: "[Events Image] Build & push image"
+        uses: docker/build-push-action@v6
+        if: ${{ needs.changes.outputs.events == 'true' || github.event_name == 'workflow_dispatch' }}
+        with:
+          context: .
+          file: ./Dockerfile.events
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
+      - name: "[ws Image] Build & push image"
+        uses: docker/build-push-action@v6
+        if: ${{ needs.changes.outputs.ws == 'true' || github.event_name == 'workflow_dispatch' }}
+        with:
+          context: .
+          file: ./Dockerfile.ws
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
           build-args: |
             GIT_SHA=${{ github.sha }}
           # cache-from: type=gha
@@ -67,12 +128,33 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create and Push Multi-arch Manifest
+      - name: "Create and Push All Multi-arch Manifests"
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           OWNER_LOWER="${GITHUB_REPOSITORY_OWNER,,}"
+
+          if [ "${{ needs.changes.outputs.main }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
           docker buildx imagetools create \
             -t ghcr.io/$OWNER_LOWER/honeypot:$SHORT_SHA \
             -t ghcr.io/$OWNER_LOWER/honeypot:latest \
             ghcr.io/$OWNER_LOWER/honeypot:${SHORT_SHA}-x64 \
             ghcr.io/$OWNER_LOWER/honeypot:${SHORT_SHA}-arm64
+          fi
+
+          if [ "${{ needs.changes.outputs.events }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+          docker buildx imagetools
+            create \
+            -t ghcr.io/$OWNER_LOWER/honeypot-events:$SHORT_SHA \
+            -t ghcr.io/$OWNER_LOWER/honeypot-events:latest \
+            ghcr.io/$OWNER_LOWER/honeypot-events:${SHORT_SHA}-x64 \
+            ghcr.io/$OWNER_LOWER/honeypot-events:${SHORT_SHA}-arm64
+          fi
+
+          if [ "${{ needs.changes.outputs.ws }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+          docker buildx imagetools
+            create \
+            -t ghcr.io/$OWNER_LOWER/honeypot-ws:$SHORT_SHA \
+            -t ghcr.io/$OWNER_LOWER/honeypot-ws:latest \
+            ghcr.io/$OWNER_LOWER/honeypot-ws:${SHORT_SHA}-x64 \
+            ghcr.io/$OWNER_LOWER/honeypot-ws:${SHORT_SHA}-arm64
+          fi
