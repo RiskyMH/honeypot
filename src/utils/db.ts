@@ -6,7 +6,7 @@ export type HoneypotConfig = {
   honeypot_msg_id: string | null;
   log_channel_id: string | null;
   action: 'softban' | 'ban' | 'disabled';
-  experiments: ("no-warning-msg" | "no-dm" | "random-channel-name" | "random-channel-name-chaos" | "channel-warmer" | "timeout-for-typing")[]
+  experiments: ("no-warning-msg" | "no-dm" | "random-channel-name" | "random-channel-name-chaos" | "channel-warmer")[]
 };
 
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite");
