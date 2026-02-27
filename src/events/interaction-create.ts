@@ -5,7 +5,7 @@ import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotU
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID } from "../utils/constants";
-import { failedToDmUsers, getGuildInfo, notHoneypottedChannelIds } from "../utils/cache";
+import { getGuildInfo } from "../utils/cache";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
@@ -322,10 +322,6 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         });
                     }
                 }
-
-                // a somewhat trigger to reset
-                notHoneypottedChannelIds.length = 0;
-                failedToDmUsers.length = 0;
                 return;
             }
 

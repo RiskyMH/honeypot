@@ -2,10 +2,13 @@ import { GatewayDispatchEvents, type APIMessage } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { notHoneypottedChannelIds, getGuildInfo, failedToDmUsers } from "../utils/cache";
+import { getGuildInfo } from "../utils/cache";
 import { CUSTOM_EMOJI_ID } from "../utils/constants";
 import { getConfig, getHoneypotMessages, logModerateEvent, getModeratedCount } from "../utils/db";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
+
+// userIds, to prevent retrying to DM users if the API fails (ie due to DMs closed)
+export const failedToDmUsers = [] as string[];
 
 const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
     event: GatewayDispatchEvents.MessageCreate,
@@ -32,17 +35,9 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
 
 const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string }, api: API | API2) => {
     try {
-        if (notHoneypottedChannelIds.includes(channelId)) return;
-
         const config = await getConfig(guildId);
         if (!config || !config.action) return;
-        if (channelId !== config.honeypot_channel_id) {
-            notHoneypottedChannelIds.push(channelId);
-            if (notHoneypottedChannelIds.length > 100) {
-                notHoneypottedChannelIds.shift();
-            }
-            return;
-        };
+        if (channelId !== config.honeypot_channel_id) return
 
         // just for the fun of it to acknowledge it saw the message
         let emojiReact = null as null | Promise<any>

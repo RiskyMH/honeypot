@@ -1,6 +1,6 @@
 import { ChannelType, GatewayDispatchEvents, type GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
-import { guildCache, notHoneypottedChannelIds } from "../utils/cache";
+import { guildCache } from "../utils/cache";
 import { getConfig, getModeratedCount, setConfig } from "../utils/db";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
@@ -51,10 +51,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
 
 async function findOrCreateHoneypotChannel(api: API | API2, guild: GatewayGuildCreateDispatchData): Promise<string> {
     const channel = guild.channels.find((c) => c.name === "honeypot" && c.type === ChannelType.GuildText);
-    if (channel) {
-        notHoneypottedChannelIds.length = 0;
-        return channel.id;
-    }
+    if (channel) return channel.id;
 
     const newChannel = await api.guilds.createChannel(guild.id, {
         name: "honeypot",

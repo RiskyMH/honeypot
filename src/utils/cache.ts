@@ -9,6 +9,3 @@ export const getGuildInfo = async (api: API | API2, guildId: string, signal?: Ab
   guildCache.set(guildId, info);
   return info;
 };
-
-export const notHoneypottedChannelIds = [] as string[];
-export const failedToDmUsers = [] as string[]; // userIds, to prevent retrying to DM users if the API fails (ie due to DMs closed)
