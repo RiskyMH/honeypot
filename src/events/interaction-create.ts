@@ -52,7 +52,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 type: ComponentType.ChannelSelect,
                                 custom_id: "honeypot_channel",
                                 min_values: 1,
-                                max_values: 5,
+                                max_values: config.experiments.includes("many-honeypots") ? 5 : 1,
                                 placeholder: "#honeypot",
                                 channel_types: [ChannelType.GuildText, ChannelType.GuildVoice],
                                 default_values: channels.length > 0 ? channels.map(c => ({ id: c.channel_id, type: SelectMenuDefaultValueType.Channel })) : [],
@@ -108,9 +108,10 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                     { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
                                     { label: "Only More Recent Delete", value: "only-recent-delete", description: "Only delete last 15min of messages (instead of 1hr)", default: config.experiments.includes("only-recent-delete") },
                                     { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
+                                    { label: "Many Honeypots", value: "many-honeypots", description: "Ability to create multiple honeypot channels - must submit modal and re-run /honeypot to set them", default: config.experiments.includes("many-honeypots") },
                                 ] satisfies (APISelectMenuOption | false)[]).filter(e => !!e),
                                 min_values: 0,
-                                max_values: HAS_MESSAGE_INTENT ? 9 : 8,
+                                max_values: HAS_MESSAGE_INTENT ? 10 : 9,
                                 required: false,
                             }
                         }
@@ -128,7 +129,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     action: 'softban',
                     experiments: []
                 }
-                const selectedChannelIds: string[] = [];
+                let selectedChannelIds: string[] = [];
 
                 const interactionCreatedAt = getDiscordDate(interaction.id).getTime();
                 let deferredPromise = false as false | Promise<any>;
@@ -150,8 +151,12 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     if (!c) continue;
 
                     if (c.type === ComponentType.ChannelSelect) {
-                        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) selectedChannelIds.push(...c.values);
-                        if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0]!;
+                        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) {
+                            selectedChannelIds.push(...c.values);
+                        }
+                        if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) {
+                            newConfig.log_channel_id = c.values[0]!;
+                        }
                     }
                     if (c.type === ComponentType.RadioGroup) {
                         if (c.custom_id === "honeypot_action" && c.value) {
@@ -176,6 +181,11 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         flags: MessageFlags.Ephemeral,
                     });
                     return;
+                }
+
+                // if not using many honeypots experiment, then just use first
+                if (!newConfig.experiments.includes("many-honeypots")) {
+                    selectedChannelIds = selectedChannelIds.slice(0, 1);
                 }
 
                 const prev = await db.getConfigWithChannels(guildId);

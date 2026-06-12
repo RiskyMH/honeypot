@@ -4,7 +4,18 @@ export type HoneypotConfig = {
   guild_id: string;
   log_channel_id: string | null;
   action: 'softban' | 'ban' | 'disabled';
-  experiments: ("no-warning-msg" | "no-dm" | "random-channel-name" | "random-channel-name-chaos" | "channel-warmer" | "forward-message" | "reinvite" | "timeout-first" | "only-recent-delete")[]
+  experiments: (
+    "no-warning-msg" |
+    "no-dm" |
+    "random-channel-name" |
+    "random-channel-name-chaos" |
+    "channel-warmer" |
+    "forward-message" |
+    "reinvite" |
+    "timeout-first" |
+    "only-recent-delete" |
+    "many-honeypots"
+  )[]
 };
 
 export type HoneypotChannel = {
