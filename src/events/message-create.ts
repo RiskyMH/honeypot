@@ -235,7 +235,7 @@ const onMessage = async (
             redis?.publish("moderate_event", "+1");
         }
 
-        const moderatedCount = await db.getModeratedCount(guildId, channels.length > 1 ?  matchedChannel.channel_id : null);
+        const moderatedCount = await db.getModeratedCount(guildId, channels.length > 1 ? matchedChannel.channel_id : null);
 
         try {
             // const reply = (messageId && channelId === matchedChannel.channel_id) ? {

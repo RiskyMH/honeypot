@@ -133,9 +133,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 let selectedChannelIds: string[] = [];
 
                 const interactionCreatedAt = getDiscordDate(interaction.id).getTime();
-                let deferredPromise = false as false | Promise<any>;
+                let deferredPromise = false as false | Promise<true>;
                 const deferTimeout = setTimeout(async () => {
-                    deferredPromise = api.interactions.defer(interaction.id, interaction.token);
+                    deferredPromise = api.interactions.defer(interaction.id, interaction.token).then(() => true);
                 }, 2500 - (Date.now() - interactionCreatedAt));
 
                 const interactionReply = async (body: CreateInteractionResponseOptions) => {
@@ -167,7 +167,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     if (c.type === ComponentType.StringSelect) {
                         if (c.custom_id === "honeypot_experiments" && Array.isArray(c.values)) {
                             for (const val of c.values) {
-                                if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer", "forward-message", "reinvite", "timeout-first", "only-recent-delete"].includes(val)) {
+                                if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer", "forward-message", "reinvite", "timeout-first", "only-recent-delete", "many-honeypots"].includes(val)) {
                                     newConfig.experiments.push(val as any);
                                 }
                             }
@@ -288,11 +288,11 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 // but if either fail, then let user know its broken sadly
                 const msgIds = new Map<string, string | null>();
                 if (!newConfig.experiments.includes("no-warning-msg")) {
-                    const count = await db.getModeratedCount(guildId);
                     const customMessages = await db.getHoneypotMessages(guildId);
-                    const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
 
                     for (const channelId of selectedChannelIds) {
+                        const count = await db.getModeratedCount(guildId, selectedChannelIds.length > 1 ? channelId : null);
+                        const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
                         const prevMatch = prevChannels.find(c => c.channel_id === channelId) ?? null;
                         try {
                             if (!prevMatch?.msg_id) {
@@ -356,14 +356,14 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                         if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
                             console.log(styleText('dim', `Error sending test message to log channel (interaction handler): ${err}`));
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `I don't have access to the log channel <#${newConfig.log_channel_id}>. Please make sure I have access to that channel and try again (both View Channel and Send Messages permissions).\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
                             });
                         } else {
                             console.log(`Error sending test message to log channel (interaction handler): ${err}`);
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `There was a problem sending test message to the log channel <#${newConfig.log_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
                                 flags: MessageFlags.Ephemeral,
                                 allowed_mentions: {},

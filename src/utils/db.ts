@@ -340,6 +340,10 @@ export async function unsetHoneypotMsgs(guildId: string, messageIds: string[]) {
 }
 
 export async function setHoneypotChannels(guild_id: string, channels: { channel_id: string; msg_id?: string | null }[]) {
+  if (channels.length === 0) {
+    await db`DELETE FROM honeypot_channels WHERE guild_id = ${guild_id}`;
+    return;
+  }
   await db.begin(async (tx) => {
     await tx`DELETE FROM honeypot_channels WHERE guild_id = ${guild_id} AND channel_id NOT IN ${db(channels.map(c => c.channel_id))}`;
     await tx`
