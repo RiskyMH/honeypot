@@ -185,7 +185,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 }
 
                 // if not using many honeypots experiment, then just use first
-                if (!newConfig.experiments.includes("many-honeypots")) {
+                if (selectedChannelIds.length > 1 && !newConfig.experiments.includes("many-honeypots")) {
                     selectedChannelIds = selectedChannelIds.slice(0, 1);
                 }
 
