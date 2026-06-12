@@ -55,23 +55,25 @@ const cron: Cron = {
         // channel warmer experiment - send a msg and instantly delete it to keep channel active
         const channelWarmer = async () => {
             const guilds = await db.getGuildsWithExperiment("channel-warmer");
-            const configs = guilds.filter(config => !!config?.honeypot_channel_id);
-            for (const config of configs) {
-                try {
-                    await channelWarmerExperiment(api, config.guild_id, config.honeypot_channel_id!);
-                    await Bun.sleep(1_000);
-                } catch (err) {
-                    console.log(`Channel warmer experiment execution failed: ${err}`);
-                    await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
-                        content: `⚠️ There was a problem sending a message to the <#${config.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
-                        allowed_mentions: {},
-                    }).catch(err => {
-                        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
-                            console.log(styleText("dim", `Failed to send failed message for channel warmer experiment: ${err}`));
-                        } else {
-                            console.log(`Failed to send failed message for channel warmer experiment: ${err}`);
-                        }
-                    });
+            for (const config of guilds) {
+                const channels = await db.getChannels(config.guild_id);
+                for (const channel of channels) {
+                    try {
+                        await Bun.sleep(1_000);
+                        await channelWarmerExperiment(api, config.guild_id, channel.channel_id);
+                    } catch (err) {
+                        console.log(`Channel warmer experiment execution failed: ${err}`);
+                        await api.channels.createMessage(config.log_channel_id || channel.channel_id, {
+                            content: `⚠️ There was a problem sending a message to the <#${channel.channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+                            allowed_mentions: {},
+                        }).catch(err => {
+                            if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                                console.log(styleText("dim", `Failed to send failed message for channel warmer experiment: ${err}`));
+                            } else {
+                                console.log(`Failed to send failed message for channel warmer experiment: ${err}`);
+                            }
+                        });
+                    }
                 }
             }
         };
@@ -79,28 +81,30 @@ const cron: Cron = {
         // random channel name experiment - change the honeypot channel name to a random name
         const randomChannelName = async () => {
             const guilds = await db.getGuildsWithExperiment("random-channel-name");
-            const configs = guilds.filter(config => !!config?.honeypot_channel_id);
-            for (const config of configs) {
-                try {
-                    await randomChannelNameExperiment(
-                        api,
-                        config.guild_id,
-                        config.honeypot_channel_id!,
-                        config.experiments.includes("random-channel-name-chaos")
-                    )
-                    await Bun.sleep(1_000);
-                } catch (err) {
-                    console.log(`Random channel name experiment execution failed: ${err}`);
-                    await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
-                        content: `⚠️ There was a problem updating the <#${config.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
-                        allowed_mentions: {},
-                    }).catch(err => {
-                        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
-                            console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
-                        } else {
-                            console.log(`Failed to send failed message for random channel name experiment: ${err}`);
-                        }
-                    });
+            for (const config of guilds) {
+                const channels = await db.getChannels(config.guild_id);
+                for (const channel of channels) {
+                    try {
+                        await Bun.sleep(1_000);
+                        await randomChannelNameExperiment(
+                            api,
+                            config.guild_id,
+                            channel.channel_id,
+                            config.experiments.includes("random-channel-name-chaos")
+                        )
+                    } catch (err) {
+                        console.log(`Random channel name experiment execution failed: ${err}`);
+                        await api.channels.createMessage(config.log_channel_id || channel.channel_id, {
+                            content: `⚠️ There was a problem updating the <#${channel.channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+                            allowed_mentions: {},
+                        }).catch(err => {
+                            if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                                console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
+                            } else {
+                                console.log(`Failed to send failed message for random channel name experiment: ${err}`);
+                            }
+                        });
+                    }
                 }
             }
         };

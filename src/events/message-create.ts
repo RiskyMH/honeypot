@@ -34,9 +34,13 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
 
         // if it's a bot message, still get the proxy to properly subscribe and avoid seeing the spam
         if (process.env.HAS_PROXY_WS && redis && message.guild_id) {
-            const config = await db.getConfig(message.guild_id);
-            if (!config || !config.action || config.honeypot_channel_id === message.channel_id) return;
-            setSubscribedChannelCache(message.guild_id, [config.honeypot_channel_id || "none"], redis);
+            const result = await db.getConfigWithChannels(message.guild_id);
+            if (!result) return;
+            const { config, channels } = result;
+            if (!config || !config.action) return;
+            if (channels.some(c => c.channel_id === message.channel_id)) return;
+            const ids = channels.map(c => c.channel_id);
+            setSubscribedChannelCache(message.guild_id, ids.length > 0 ? ids : ["none"], redis);
         }
     }
 };
@@ -50,10 +54,16 @@ const onMessage = async (
     try {
         if (!process.env.HAS_PROXY_WS && redis && !(await getSubscribedChannelCache(guildId, redis))?.includes(channelId)) return;
 
-        const config = await db.getConfig(guildId);
+        const result = await db.getConfigWithChannels(guildId);
+        if (!result) return;
+        const { config, channels } = result;
         if (!config || !config.action) return;
-        if (channelId !== config.honeypot_channel_id) {
-            if (redis) setSubscribedChannelCache(guildId, [config.honeypot_channel_id || "none"], redis);
+        const matchedChannel = channels.find(c => c.channel_id === channelId);
+        if (!matchedChannel) {
+            if (redis) {
+                const ids = channels.map(c => c.channel_id);
+                setSubscribedChannelCache(guildId, ids.length > 0 ? ids : ["none"], redis);
+            }
             return;
         }
 
@@ -110,7 +120,7 @@ const onMessage = async (
                         if (redis) setDmChannelCache(userId, dmChannel, redis);
                     }
                     const reinviteCode = config.experiments.includes("reinvite") && await db.getReinvite(guildId);
-                    const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
+                    const link = `https://discord.com/channels/${guildId}/${channelId}/${matchedChannel.msg_id || messageId || ""}`;
                     const dmContent = honeypotUserDMMessage(
                         config.action,
                         guild?.name ?? guildId!,
@@ -221,14 +231,14 @@ const onMessage = async (
             failed = "owner";
         };
         if (!failed && !isOwner) {
-            await db.logModerateEvent(guildId, userId);
+            await db.logModerateEvent(guildId, userId, matchedChannel.channel_id);
             redis?.publish("moderate_event", "+1");
         }
 
-        const moderatedCount = await db.getModeratedCount(guildId);
+        const moderatedCount = await db.getModeratedCount(guildId, channels.length > 1 ?  matchedChannel.channel_id : null);
 
         try {
-            // const reply = (messageId && channelId === config.honeypot_channel_id) ? {
+            // const reply = (messageId && channelId === matchedChannel.channel_id) ? {
             //     message_id: messageId,
             //     fail_if_not_exists: false,
             // } satisfies RESTAPIMessageReference : undefined;
@@ -236,24 +246,24 @@ const onMessage = async (
 
             if (config.log_channel_id && !failed && !isOwner) {
                 await api.channels.createMessage(config.log_channel_id, {
-                    ...logActionMessage(userId, config.honeypot_channel_id, config.action, customMessages?.log_message, moderatedCount),
+                    ...logActionMessage(userId, matchedChannel.channel_id, config.action, customMessages?.log_message, moderatedCount),
                     allowed_mentions: { users: [userId] },
                 });
             } else if (isOwner) {
-                await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
+                await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                     content: `⚠️ User <@${userId}> triggered the honeypot, but they are the **server owner** so I cannot ${config.action} them.\n-# In anycase **ensure my role is higher** than people’s highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
                     allowed_mentions: { users: [userId] },
                     message_reference: reply
                 });
             } else if (failed === "unban" && config.action === "softban") {
-                await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
+                await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                     content: `⚠️ User <@${userId}> triggered the honeypot, but I failed to **fully** softban them.\n-# They may still be banned but you can manually unban them in server settings.`,
                     allowed_mentions: { users: [userId] },
                     message_reference: reply
                 });
                 await emojiReact;
             } else if (failed) {
-                await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
+                await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                     content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have **ban members** permission.`,
                     allowed_mentions: { users: [userId] },
                     message_reference: reply
@@ -273,16 +283,16 @@ const onMessage = async (
             } else console.log(`Failed to send log message (MessageCreate handler): ${err}`);
         }
 
-        if (config.honeypot_msg_id && !config.experiments.includes("no-warning-msg")) try {
+        if (matchedChannel.msg_id && !config.experiments.includes("no-warning-msg")) try {
             await api.channels.editMessage(
-                config.honeypot_channel_id,
-                config.honeypot_msg_id,
+                matchedChannel.channel_id,
+                matchedChannel.msg_id,
                 honeypotWarningMessage(moderatedCount, config.action, customMessages?.warning_message)
             );
         } catch (err) {
             if (err instanceof DiscordAPIError && err.code == RESTJSONErrorCodes.UnknownMessage) {
                 console.log(styleText("dim", `Failed to update honeypot message: ${err}`));
-                await db.unsetHoneypotMsg(guildId, config.honeypot_msg_id!);
+                await db.unsetHoneypotMsg(guildId, matchedChannel.msg_id!);
             } else console.log(`Failed to update honeypot message: ${err}`);
         }
 

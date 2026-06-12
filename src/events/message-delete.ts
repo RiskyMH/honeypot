@@ -9,12 +9,16 @@ const handler: EventHandler<GatewayDispatchEvents.MessageDelete> = {
         try {
             await db.unsetHoneypotMsg(message.guild_id, message.id);
 
-            // same thing as in message-create, if we have a proxy ws and the deleted message is not in the honeypot channel,
+            // same thing as in message-create, if we have a proxy ws and the deleted message is not in a honeypot channel,
             // we should still cache that this is not the right channel so we dont get unnessary spam
             if (process.env.HAS_PROXY_WS && redis && message.guild_id) {
-                const config = await db.getConfig(message.guild_id);
-                if (!config || !config.action || config.honeypot_channel_id === message.channel_id) return;
-                setSubscribedChannelCache(message.guild_id, [config.honeypot_channel_id || "none"], redis);
+                const result = await db.getConfigWithChannels(message.guild_id);
+                if (!result) return;
+                const { config, channels } = result;
+                if (!config || !config.action) return;
+                if (channels.some(c => c.channel_id === message.channel_id)) return;
+                const ids = channels.map(c => c.channel_id);
+                setSubscribedChannelCache(message.guild_id, ids.length > 0 ? ids : ["none"], redis);
             }
 
         } catch (err) {

@@ -50,13 +50,14 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
             }
             await db.setConfig({
                 guild_id: guild.id,
-                honeypot_channel_id: channelId,
-                honeypot_msg_id: msgId,
                 log_channel_id: null,
                 action: 'softban',
                 experiments: [],
             });
-            if (redis) channelId && setSubscribedChannelCache(guild.id, [channelId], redis);
+            if (channelId) {
+                await db.setHoneypotChannels(guild.id, [{ channel_id: channelId, msg_id: msgId }]);
+                if (redis) setSubscribedChannelCache(guild.id, [channelId], redis);
+            }
             redis?.publish("guild_count", "+1");
             if (!setupSuccess && guild.system_channel_id) {
                 try {

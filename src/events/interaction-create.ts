@@ -8,6 +8,8 @@ import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/cons
 import { getDmChannelCache, getGuildInfo, removeFromDeleteMessageCache, setDmChannelCache, setSubscribedChannelCache } from "../utils/cache";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
+import { getDiscordDate } from "../utils/tools";
+import type { CreateInteractionResponseOptions } from "@discordjs/core";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
@@ -29,15 +31,14 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
         try {
             // slash command handler: show modal
             if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
-                let config = await db.getConfig(guildId);
-                config ||= {
+                const result = await db.getConfigWithChannels(guildId);
+                const config: HoneypotConfig = result?.config ?? {
                     guild_id: guildId,
-                    honeypot_channel_id: null,
-                    honeypot_msg_id: null,
                     log_channel_id: null,
                     action: 'softban',
                     experiments: []
                 };
+                const channels = result?.channels ?? [];
 
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot",
@@ -45,16 +46,16 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     components: [
                         {
                             type: ComponentType.Label,
-                            label: "Honeypot Channel",
-                            description: "Any message sent in this channel will cause the author to be kicked/banned from server",
+                            label: "Honeypot Channels",
+                            description: "Any message sent in these channels will cause the author to be kicked/banned from server",
                             component: {
                                 type: ComponentType.ChannelSelect,
                                 custom_id: "honeypot_channel",
                                 min_values: 1,
-                                max_values: 1,
+                                max_values: 5,
                                 placeholder: "#honeypot",
-                                channel_types: [ChannelType.GuildText],
-                                default_values: config.honeypot_channel_id ? [{ id: config.honeypot_channel_id, type: SelectMenuDefaultValueType.Channel }] : [],
+                                channel_types: [ChannelType.GuildText, ChannelType.GuildVoice],
+                                default_values: channels.length > 0 ? channels.map(c => ({ id: c.channel_id, type: SelectMenuDefaultValueType.Channel })) : [],
                                 required: true,
                             }
                         },
@@ -123,12 +124,25 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
             else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal:${userContextHash}`) {
                 const newConfig: HoneypotConfig = {
                     guild_id: guildId,
-                    honeypot_channel_id: null,
-                    honeypot_msg_id: null,
                     log_channel_id: null,
                     action: 'softban',
                     experiments: []
                 }
+                const selectedChannelIds: string[] = [];
+
+                const interactionCreatedAt = getDiscordDate(interaction.id).getTime();
+                let deferredPromise = false as false | Promise<any>;
+                const deferTimeout = setTimeout(async () => {
+                    deferredPromise = api.interactions.defer(interaction.id, interaction.token);
+                }, 2500 - (Date.now() - interactionCreatedAt));
+
+                const interactionReply = async (body: CreateInteractionResponseOptions) => {
+                    if (await deferredPromise) {
+                        return api.interactions.editReply(applicationId, interaction.token, body);
+                    }
+                    clearTimeout(deferTimeout);
+                    return api.interactions.reply(interaction.id, interaction.token, body);
+                };
 
                 for (const label of interaction.data.components) {
                     if (label.type !== ComponentType.Label) continue;
@@ -136,7 +150,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     if (!c) continue;
 
                     if (c.type === ComponentType.ChannelSelect) {
-                        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.honeypot_channel_id = c.values[0]!;
+                        if (c.custom_id === "honeypot_channel" && Array.isArray(c.values) && c.values.length > 0) selectedChannelIds.push(...c.values);
                         if (c.custom_id === "log_channel" && Array.isArray(c.values) && c.values.length > 0) newConfig.log_channel_id = c.values[0]!;
                     }
                     if (c.type === ComponentType.RadioGroup) {
@@ -155,38 +169,42 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }
                 }
 
-                // shouldn’t happen, but just in case
-                if (!newConfig.honeypot_channel_id) {
-                    await api.interactions.reply(interaction.id, interaction.token, {
-                        content: "Honeypot channel is required! No changes have been made.",
+                if (selectedChannelIds.length === 0) {
+                    await interactionReply({
+                        content: "At least one honeypot channel is required! No changes have been made.",
                         allowed_mentions: {},
                         flags: MessageFlags.Ephemeral,
                     });
                     return;
                 }
 
-                const prevConfig = await db.getConfig(guildId);
-                const honeypotChanged = newConfig.honeypot_channel_id !== prevConfig?.honeypot_channel_id;
+                const prev = await db.getConfigWithChannels(guildId);
+                const prevConfig = prev?.config ?? null;
+                const prevChannels = prev?.channels ?? [];
+                const prevChannelIds = new Set(prevChannels.map(c => c.channel_id));
+                const addedChannels = selectedChannelIds.filter(id => !prevChannelIds.has(id));
+                const removedChannels = prevChannels.filter(c => !selectedChannelIds.includes(c.channel_id));
                 const logChanged = newConfig.log_channel_id !== prevConfig?.log_channel_id;
-                const actionChanged = newConfig.action !== prevConfig?.action;
 
                 // pretty reasonable requests to ensure user can even do said actions
                 {
-                    const resolvedChannel = interaction.data.resolved?.channels?.[newConfig.honeypot_channel_id];
                     const requiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel | PermissionFlagsBits.ManageMessages | PermissionFlagsBits.ManageChannels;
-                    if (honeypotChanged && !hasPermission(BigInt(resolvedChannel?.permissions || "0"), requiredPerms)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
-                            content: `You don’t have enough permissions to set the honeypot channel to <#${newConfig.honeypot_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel, Manage Messages, Manage Channels.\n-# No settings have been changed.`,
-                            allowed_mentions: {},
-                            flags: MessageFlags.Ephemeral,
-                        });
-                        return;
+                    for (const id of addedChannels) {
+                        const resolvedChannel = interaction.data.resolved?.channels?.[id];
+                        if (!hasPermission(BigInt(resolvedChannel?.permissions || "0"), requiredPerms)) {
+                            await interactionReply({
+                                content: `You don't have enough permissions to set the honeypot channel to <#${id}>. You need the following permissions in that channel: Send Messages, View Channel, Manage Messages, Manage Channels.\n-# No settings have been changed.`,
+                                allowed_mentions: {},
+                                flags: MessageFlags.Ephemeral,
+                            });
+                            return;
+                        }
                     }
 
                     const resolvedLogChannel = newConfig.log_channel_id ? interaction.data.resolved?.channels?.[newConfig.log_channel_id] : null;
                     const logRequiredPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel;
                     if (logChanged && newConfig.log_channel_id && !hasPermission(BigInt(resolvedLogChannel?.permissions || "0"), logRequiredPerms)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
+                        await interactionReply({
                             content: `You don’t have enough permissions to set the log channel to <#${newConfig.log_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel.\n-# No settings have been changed.`,
                             allowed_mentions: {},
                             flags: MessageFlags.Ephemeral,
@@ -196,9 +214,8 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                     const memberPerms = interaction.member?.permissions
                     const banEvents = ["ban", "softban"];
-                    // check ban permissions even if the action didn’t change, because any new channel moved to can suddenly ban people
                     if (banEvents.includes(newConfig.action) && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.BanMembers)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
+                        await interactionReply({
                             content: `You need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
                             allowed_mentions: {},
                             flags: MessageFlags.Ephemeral,
@@ -206,7 +223,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         return;
                     }
                     if (banEvents.includes(newConfig.action) && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.BanMembers)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
+                        await interactionReply({
                             content: `I need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
                             allowed_mentions: {},
                             flags: MessageFlags.Ephemeral,
@@ -216,7 +233,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                     if (newConfig.experiments.includes("reinvite")) {
                         if (memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.CreateInstantInvite)) {
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `You need the Create Instant Invite permission to enable the "Reinvite" experiment.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
@@ -224,7 +241,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                             return;
                         }
                         if (!hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.CreateInstantInvite)) {
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `I need the Create Instant Invite permission to enable the "Reinvite" experiment.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
@@ -235,7 +252,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                     if (newConfig.experiments.includes("timeout-first")) {
                         if (memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.ModerateMembers)) {
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `You need the Timeout Members permission to enable the "Timeout First" experiment.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
@@ -243,7 +260,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                             return;
                         }
                         if (!hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ModerateMembers)) {
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `I need the Timeout Members permission to enable the "Timeout First" experiment.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
@@ -258,72 +275,72 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 // if honeypot channel changed or current honeypot msg is invalid, create new honeypot message
                 // otherwise try to edit it with latest data
                 // but if either fail, then let user know its broken sadly
-                let msgId: string | null = null;
+                const msgIds = new Map<string, string | null>();
                 if (!newConfig.experiments.includes("no-warning-msg")) {
                     const count = await db.getModeratedCount(guildId);
                     const customMessages = await db.getHoneypotMessages(guildId);
                     const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
-                    try {
-                        if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
-                            const msg = await api.channels.createMessage(
-                                newConfig.honeypot_channel_id,
-                                messageBody
-                            );
-                            msgId = msg.id;
-                        } else if (prevConfig?.honeypot_msg_id) {
-                            try {
-                                await api.channels.editMessage(
-                                    newConfig.honeypot_channel_id,
-                                    prevConfig.honeypot_msg_id,
-                                    messageBody
-                                );
-                            } catch {
-                                const msg = await api.channels.createMessage(
-                                    newConfig.honeypot_channel_id,
-                                    messageBody
-                                );
-                                msgId = msg.id;
+
+                    for (const channelId of selectedChannelIds) {
+                        const prevMatch = prevChannels.find(c => c.channel_id === channelId) ?? null;
+                        try {
+                            if (!prevMatch?.msg_id) {
+                                const msg = await api.channels.createMessage(channelId, messageBody);
+                                msgIds.set(channelId, msg.id);
+                            } else {
+                                try {
+                                    await api.channels.editMessage(channelId, prevMatch.msg_id, messageBody);
+                                    msgIds.set(channelId, prevMatch.msg_id);
+                                } catch {
+                                    const msg = await api.channels.createMessage(channelId, messageBody);
+                                    msgIds.set(channelId, msg.id);
+                                }
                             }
-                        } else {
-                            console.log("No previous honeypot message ID found to edit.");
+                        } catch (err) {
+                            if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
+                                console.log(styleText("dim", `Error creating/editing honeypot message (interaction handler): ${err}`));
+                                await interactionReply({
+                                    content: `I don’t have access to the honeypot channel <#${channelId}>. Please make sure I have access to that channel and try again (both View Channel and Send Messages permissions).\n-# No settings have been changed.`,
+                                    allowed_mentions: {},
+                                    flags: MessageFlags.Ephemeral,
+                                });
+                            } else {
+                                console.log(`Error creating/editing honeypot message (interaction handler): ${err}`);
+                                await interactionReply({
+                                    content: `There was a problem setting up the honeypot channel <#${channelId}>. Please check my permissions and try again.\n-# No settings have been changed.`,
+                                    allowed_mentions: {},
+                                    flags: MessageFlags.Ephemeral,
+                                });
+                            }
+                            for (const [cid, mid] of msgIds) {
+                                // only delete the message if it was created in this setup attempt (ie keep valid ones)
+                                if (prevChannels.find(c => c.channel_id === cid)?.msg_id === mid) continue;
+                                if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after setup failure" }).catch(() => null);
+                            }
+                            return;
                         }
-                    } catch (err) {
-                        if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
-                            console.log(styleText("dim", `Error creating/editing honeypot message (interaction handler): ${err}`));
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `I don't have access to the honeypot channel <#${newConfig.honeypot_channel_id}>. Please make sure I have access to that channel and try again (both View Channel and Send Messages permissions).\n-# No settings have been changed.`,
-                                allowed_mentions: {},
-                                flags: MessageFlags.Ephemeral,
-                            });
-                        } else {
-                            console.log(`Error creating/editing honeypot message (interaction handler): ${err}`);
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `There was a problem setting up the honeypot channel to <#${newConfig.honeypot_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
-                                allowed_mentions: {},
-                                flags: MessageFlags.Ephemeral,
-                            });
-                        }
-                        return;
                     }
-                } else if (prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
-                    // they didn’t want honeypot msg, so delete old one if exists
-                    api.channels.deleteMessage(
-                        prevConfig.honeypot_channel_id,
-                        prevConfig.honeypot_msg_id,
-                    ).catch(() => null);
-                    newConfig.honeypot_msg_id = null;
+
+                    for (const ch of removedChannels) {
+                        if (ch.msg_id) api.channels.deleteMessage(ch.channel_id, ch.msg_id).catch(() => null);
+                    }
+                } else {
+                    // they didn’t want honeypot msg, so delete old ones if exists
+                    for (const channel of prevChannels) {
+                        if (channel.msg_id) api.channels.deleteMessage(channel.channel_id, channel.msg_id).catch(() => null);
+                    }
                 }
 
                 if (logChanged && newConfig.log_channel_id) {
                     try {
                         await api.channels.createMessage(newConfig.log_channel_id, {
-                            content: `Honeypot is set up in <#${newConfig.honeypot_channel_id}>! This current channel will log honeypot events.`,
+                            content: `Honeypot is set up in ${selectedChannelIds.map(id => `<#${id}>`).join(", ")}! This current channel will log honeypot events.`,
                             allowed_mentions: {},
                         });
                     } catch (err) {
                         // clean up just created honeypot message if log channel fails (because user might think it's fully set up otherwise)
-                        if (msgId) {
-                            api.channels.deleteMessage(newConfig.honeypot_channel_id, msgId, { reason: "Cleaning up honeypot message after log channel setup failure" }).catch(() => null);
+                        for (const [cid, mid] of msgIds) {
+                            if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after log channel setup failure" }).catch(() => null);
                         }
 
                         if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
@@ -345,11 +362,12 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }
                 }
 
-                if (newConfig.experiments.includes("reinvite") && (!prevConfig?.experiments.includes("reinvite") || honeypotChanged)) {
+                if (newConfig.experiments.includes("reinvite") && (!prevConfig?.experiments.includes("reinvite") || addedChannels.length > 0)) {
+                    const inviteChannelId = selectedChannelIds[0]!;
                     try {
-                        const invite = await api.channels.createInvite(newConfig.honeypot_channel_id, {
-                            max_age: 0, // never
-                            max_uses: 0, // unlimited
+                        const invite = await api.channels.createInvite(inviteChannelId, {
+                            max_age: 0,
+                            max_uses: 0,
                             unique: false,
                         }, {
                             reason: "Creating invite for reinvite experiment",
@@ -357,29 +375,28 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         });
                         await db.setReinvite(guildId, invite.code);
                     } catch (err) {
-                        // clean up just created honeypot message if making invite fails (because user might think it's fully set up otherwise)
-                        if (msgId) {
-                            api.channels.deleteMessage(newConfig.honeypot_channel_id, msgId, { reason: "Cleaning up honeypot message after reinvite experiment failure" }).catch(() => null);
+                        for (const [cid, mid] of msgIds) {
+                            if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after reinvite experiment failure" }).catch(() => null);
                         }
 
                         const errorCode = err instanceof DiscordAPIError ? err.code : null;
                         if (errorCode === RESTJSONErrorCodes.MaximumNumberOfInvitesReached) {
                             console.log(styleText("dim", `Error creating invite for reinvite experiment: ${err}`));
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `There are too many invites in your server to make one for <#${newConfig.honeypot_channel_id}>. Please delete some existing invites and try again.\n-# No settings have been changed.`,
+                            await interactionReply({
+                                content: `There are too many invites in your server to make one for <#${inviteChannelId}>. Please delete some existing invites and try again.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
                             });
                         } else if (errorCode === RESTJSONErrorCodes.MissingAccess || errorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Error creating invite for reinvite experiment: ${err}`));
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `I don't have permission to create invites in the honeypot channel <#${newConfig.honeypot_channel_id}>. Please make sure I have the Create Invite permission in that channel and try again.\n-# No settings have been changed.`,
+                            await interactionReply({
+                                content: `I don't have permission to create invites in the honeypot channel <#${inviteChannelId}>. Please make sure I have the Create Invite permission in that channel and try again.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
                             });
                         } else {
                             console.log(`Error fetching invite for reinvite experiment: ${err}`);
-                            await api.interactions.reply(interaction.id, interaction.token, {
+                            await interactionReply({
                                 content: `There was a problem fetching the invite code for the "Reinvite" experiment. Please check my permissions and try again.\n-# No settings have been changed.`,
                                 allowed_mentions: {},
                                 flags: MessageFlags.Ephemeral,
@@ -408,48 +425,57 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 }
 
                 await db.setConfig({
-                    ...(prevConfig || {}),
-                    ...newConfig,
-                    honeypot_msg_id: (newConfig.experiments.includes("no-warning-msg") && !newConfig.honeypot_msg_id)
-                        ? null
-                        : (msgId || newConfig.honeypot_msg_id || prevConfig?.honeypot_msg_id || null),
+                    guild_id: guildId,
+                    log_channel_id: newConfig.log_channel_id,
+                    action: newConfig.action,
+                    experiments: newConfig.experiments,
                 });
-                await api.interactions.reply(interaction.id, interaction.token, {
-                    content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
+                await db.setHoneypotChannels(guildId, selectedChannelIds.map(id => ({
+                    channel_id: id,
+                    msg_id: msgIds.get(id) ?? null,
+                })));
+
+                // best to be 100% accurate (ie edit from at right time where there is technically another channel chosen)
+                const allChannels = await db.getChannels(guildId);
+                await interactionReply({
+                    content: `Honeypot config updated!\n-# - Channels: ${allChannels.map(c => `<#${c.channel_id}>`).join(", ")}\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
                     allowed_mentions: {},
                 });
-                if (redis) setSubscribedChannelCache(guildId, [newConfig.honeypot_channel_id], redis);
+                if (redis) setSubscribedChannelCache(guildId, allChannels.map(c => c.channel_id), redis);
 
-                if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
-                    await api.channels.deleteMessage(
-                        prevConfig.honeypot_channel_id,
-                        prevConfig.honeypot_msg_id,
-                        { reason: "Honeypot channel changed, so cleaning up old honeypot message" }
-                    ).catch(() => null);
+                // clean up old warning messages from channels that were removed
+                for (const ch of removedChannels) {
+                    if (ch.msg_id) {
+                        api.channels.deleteMessage(ch.channel_id, ch.msg_id, { reason: "Honeypot channel changed, so cleaning up old honeypot message" }).catch(() => null);
+                    }
                 }
 
-                // run any experiments that were just enabled immediately to show user it works
+                // run experiments that were just enabled immediately
                 if (!prevConfig?.experiments.includes("channel-warmer") && newConfig.experiments.includes("channel-warmer")) {
-                    try {
-                        await channelWarmerExperiment(api, guildId, newConfig.honeypot_channel_id!)
-                    } catch (err) {
-                        api.channels.createMessage(newConfig.log_channel_id || newConfig.honeypot_channel_id, {
-                            content: `There was a problem sending a message to the <#${newConfig.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
-                            allowed_mentions: {},
-                        }).catch(() => null);
+                    for (const id of selectedChannelIds) {
+                        try {
+                            await channelWarmerExperiment(api, guildId, id)
+                        } catch (err) {
+                            api.channels.createMessage(newConfig.log_channel_id || id, {
+                                content: `There was a problem sending a message to the <#${id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+                                allowed_mentions: {},
+                            }).catch(() => null);
+                        }
                     }
                 }
                 if (
                     (!prevConfig?.experiments.includes("random-channel-name") && newConfig.experiments.includes("random-channel-name"))
                     || (!prevConfig?.experiments.includes("random-channel-name-chaos") && newConfig.experiments.includes("random-channel-name-chaos"))
                 ) {
-                    try {
-                        await randomChannelNameExperiment(api, guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
-                    } catch (err) {
-                        api.channels.createMessage(newConfig.log_channel_id || newConfig.honeypot_channel_id, {
-                            content: `There was a problem updating the <#${newConfig.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
-                            allowed_mentions: {},
-                        }).catch(() => null);
+                    for (const id of selectedChannelIds) {
+                        try {
+                            await randomChannelNameExperiment(api, guildId, id, newConfig.experiments.includes("random-channel-name-chaos"))
+                        } catch (err) {
+                            api.channels.createMessage(newConfig.log_channel_id || id, {
+                                content: `There was a problem updating the <#${id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+                                allowed_mentions: {},
+                            }).catch(() => null);
+                        }
                     }
                 }
                 return;
@@ -544,8 +570,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
             // modal submit handler: update config from modal values
             else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_messages_modal:${userContextHash}`) {
-                const [config, guild] = await Promise.all([
+                const [config, channels, guild] = await Promise.all([
                     db.getConfig(guildId),
+                    db.getChannels(guildId),
                     getGuildInfo(api, guildId, AbortSignal.timeout(500), redis).catch(() => null)
                 ]);
 
@@ -606,34 +633,6 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     return;
                 }
 
-                if (config?.honeypot_channel_id && config?.honeypot_msg_id) {
-                    const guildModeratedCount = await db.getModeratedCount(guildId);
-                    try {
-                        await api.channels.editMessage(
-                            config.honeypot_channel_id,
-                            config.honeypot_msg_id,
-                            honeypotWarningMessage(guildModeratedCount, config.action, newMessages.warning_message)
-                        );
-                    } catch (err) {
-                        if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
-                            console.log(styleText('dim', `Error updating honeypot warning message (interaction handler): ${err}`));
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `I don't have access to the honeypot channel <#${config.honeypot_channel_id}> to update the warning message. Please make sure I have access to that channel and try again (both View Channel and Send Messages permissions).\n-# Your custom messages have not been saved.`,
-                                allowed_mentions: {},
-                                flags: MessageFlags.Ephemeral,
-                            });
-                        } else {
-                            console.log(`Error updating honeypot warning message (interaction handler): ${err}`);
-                            await api.interactions.reply(interaction.id, interaction.token, {
-                                content: `There was a problem updating the honeypot warning message in <#${config.honeypot_channel_id}>. Please check my permissions.\n-# Your custom messages have not been saved.`,
-                                allowed_mentions: {},
-                                flags: MessageFlags.Ephemeral,
-                            });
-                        }
-                        return
-                    }
-                }
-
                 await api.interactions.reply(interaction.id, interaction.token, {
                     flags: MessageFlags.IsComponentsV2,
                     components: [
@@ -688,6 +687,36 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 const existingMessages = await db.getHoneypotMessages(guildId);
                 await db.setHoneypotMessages(guildId, newMessages);
 
+                await Promise.allSettled(channels.map(async (msgChannel) => {
+                    if (!msgChannel.msg_id) return;
+                    const guildModeratedCount = await db.getModeratedCount(guildId, channels.length > 1 ? msgChannel.channel_id : null);
+                    try {
+                        await api.channels.editMessage(
+                            msgChannel.channel_id,
+                            msgChannel.msg_id,
+                            honeypotWarningMessage(guildModeratedCount, config?.action || 'softban', newMessages.warning_message)
+                        );
+                    } catch (err) {
+                        if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
+                            console.log(styleText('dim', `Error updating honeypot warning message (interaction handler): ${err}`));
+                            await api.interactions.followUp(interaction.id, interaction.token, {
+                                content: `I don't have access to the honeypot channel <#${msgChannel.channel_id}> to update the warning message. Please make sure I have access to that channel and try again (both View Channel and Send Messages permissions).\n-# Your custom messages have still been saved though.`,
+                                allowed_mentions: {},
+                                flags: MessageFlags.Ephemeral,
+                            });
+                        } else {
+                            console.log(`Error updating honeypot warning message (interaction handler): ${err}`);
+                            await api.interactions.followUp(interaction.id, interaction.token, {
+                                content: `There was a problem updating the honeypot warning message in <#${msgChannel.channel_id}>. Please check my permissions.\n-# Your custom messages have still been saved though.`,
+                                allowed_mentions: {},
+                                flags: MessageFlags.Ephemeral,
+                            });
+                        }
+                        return;
+                    }
+                }));
+
+
                 if (newMessages.dm_message && existingMessages?.dm_message !== newMessages.dm_message) {
                     const timeout = AbortSignal.timeout(10_000);
                     const userId = (interaction.user || interaction.member?.user)?.id;
@@ -706,7 +735,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                     config?.action || "softban",
                                     server.name ?? guildId!,
                                     server.isDiscoverable ? `https://discord.com/servers/${guildId}` : undefined,
-                                    `https://discord.com/channels/${guildId}/${config?.honeypot_channel_id || ""}/${config?.honeypot_msg_id || ""}`,
+                                    `https://discord.com/channels/${guildId}/${channels[0]?.channel_id || ""}/${channels[0]?.msg_id || ""}`,
                                     reinviteCode ? `https://discord.gg/${reinviteCode}` : null,
                                     false,
                                     newMessages.dm_message,
