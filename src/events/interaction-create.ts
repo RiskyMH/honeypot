@@ -40,19 +40,20 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 };
                 const channels = result?.channels ?? [];
 
+                const manyHoneypots = config.experiments.includes("many-honeypots");
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot",
                     custom_id: `honeypot_config_modal:${userContextHash}`,
                     components: [
                         {
                             type: ComponentType.Label,
-                            label: "Honeypot Channels",
-                            description: "Any message sent in these channels will cause the author to be kicked/banned from server",
+                            label: `Honeypot Channel${manyHoneypots ? "s" : ''}`,
+                            description: `Any message sent in ${manyHoneypots ? "these channels" : "this channel"} will cause the author to be kicked/banned from server`,
                             component: {
                                 type: ComponentType.ChannelSelect,
                                 custom_id: "honeypot_channel",
                                 min_values: 1,
-                                max_values: config.experiments.includes("many-honeypots") ? 5 : 1,
+                                max_values: manyHoneypots ? 5 : 1,
                                 placeholder: "#honeypot",
                                 channel_types: [ChannelType.GuildText, ChannelType.GuildVoice],
                                 default_values: channels.length > 0 ? channels.map(c => ({ id: c.channel_id, type: SelectMenuDefaultValueType.Channel })) : [],
