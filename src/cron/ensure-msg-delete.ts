@@ -6,6 +6,7 @@ import type { RESTGetAPIGuildMessagesSearchQuery } from "discord-api-types/v10";
 import { searchForMessages } from "../utils/discord-api";
 import { getEnsureMsgDeleteQueue, removeFromEnsureMsgDeleteQueue } from "../utils/cache";
 import type { Cron } from "./crons";
+import { styleText } from "node:util";
 
 const NINETY_SECONDS = 90_000;
 const TEN_MINUTES = 600_000;
@@ -23,29 +24,26 @@ function timestampToSnowflake(ts: number): string {
 async function deleteMessages(api: API | API2, channelId: string, msgIds: string[], guildId: string): Promise<void> {
     if (msgIds.length === 1) {
         await api.channels.deleteMessage(channelId, msgIds[0]!, { reason: "Ensure message delete experiment" })
-            .catch(handleDeleteError(guildId));
+            .catch(handleDeleteError);
         return;
     }
 
     for (let i = 0; i < msgIds.length; i += BULK_DELETE_MAX) {
         const batch = msgIds.slice(i, i + BULK_DELETE_MAX);
         await api.channels.bulkDeleteMessages(channelId, batch, { reason: "Ensure message delete experiment" })
-            .catch(handleDeleteError(guildId));
+            .catch(handleDeleteError);
     }
 }
 
-function handleDeleteError(guildId: string) {
-    return (err: unknown) => {
-        if (
-            err instanceof DiscordAPIError &&
-            (err.code === RESTJSONErrorCodes.UnknownMessage ||
-             err.code === RESTJSONErrorCodes.MissingAccess ||
-             err.code === RESTJSONErrorCodes.MissingPermissions)
-        ) {
-            return;
-        }
-        console.log(`[ensure-msg-delete] Delete failed in guild ${guildId}: ${err}`);
-    };
+function handleDeleteError(err: unknown) {
+    const discordError = err instanceof DiscordAPIError ? err : null;
+    if (discordError?.code === RESTJSONErrorCodes.UnknownMessage) {
+        console.log(styleText("dim", `[ensure-msg-delete] Message already deleted: ${err}`));
+    } else if (discordError?.code === RESTJSONErrorCodes.MissingAccess || discordError?.code === RESTJSONErrorCodes.MissingPermissions) {
+        console.log(styleText("dim", `[ensure-msg-delete] Delete failed: ${err}`));
+        return;
+    }
+    console.log(`[ensure-msg-delete] Delete failed: ${err}`);
 }
 
 const cron: Cron = {
