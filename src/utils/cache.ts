@@ -108,3 +108,30 @@ export const getIsAlreadyModerating = (guildId: string, userId: string, redis: B
 export const unsetIsAlreadyModerating = (guildId: string, userId: string, redis: Bun.RedisClient) => {
   redis.hdel("is_moderating", `${guildId}:${userId}`);
 }
+
+// weird cache to try to ensure all messages are deleted
+const ensureMsgDeleteQueue = new Set<string>();
+export const addToEnsureMsgDeleteQueue = (userId: string, guildId: string, redis?: Bun.RedisClient, timestamp?: number) => {
+  const entry = `${timestamp ?? Date.now()}:${userId}:${guildId}`;
+  if (redis) {
+    return redis.sadd("ensure-msg-delete", entry);
+  }
+  ensureMsgDeleteQueue.add(entry);
+}
+
+export const getEnsureMsgDeleteQueue = async (redis?: Bun.RedisClient): Promise<string[]> => {
+  if (redis) {
+    return redis.smembers("ensure-msg-delete");
+  }
+  return [...ensureMsgDeleteQueue];
+}
+
+export const removeFromEnsureMsgDeleteQueue = (entries: string[], redis?: Bun.RedisClient) => {
+  if (redis && entries.length > 0) {
+    return redis.srem("ensure-msg-delete", ...entries);
+  } else if (!redis) {
+    for (const entry of entries) {
+      ensureMsgDeleteQueue.delete(entry);
+    }
+  }
+}

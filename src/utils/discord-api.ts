@@ -1,7 +1,8 @@
 import type { API, RESTGetAPIGuildRoleMemberCountsResult, Snowflake } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import type { RequestData } from "@discordjs/rest";
+import { makeURLSearchParams, type RequestData } from "@discordjs/rest";
 import { Routes } from "discord-api-types/v10";
+import type { RESTGetAPIGuildMessagesSearchQuery, RESTGetAPIGuildMessagesSearchResult } from "discord-api-types/v9";
 
 /**
  * Fetches role member counts for a guild.
@@ -16,4 +17,25 @@ export async function getRoleMemberCounts(api: API | API2, guildId: Snowflake, {
         auth,
         signal,
     }) as Promise<RESTGetAPIGuildRoleMemberCountsResult>;
+}
+
+/**
+ * Searches for messages.
+ *
+ * @see {@link https://docs.discord.com/developers/resources/message#search-guild-messages}
+ * @param guildId - The id of the guild to search in
+ * @param query - The query to search for
+ * @param options - The options for searching for messages
+ */
+export async function searchForMessages(
+    api: API | API2,
+    guildId: Snowflake,
+    query: RESTGetAPIGuildMessagesSearchQuery,
+    { auth, signal }: Pick<RequestData, 'auth' | 'signal'> = {},
+) {
+    return api.rest.get(Routes.guildMessagesSearch(guildId), {
+        auth,
+        query: makeURLSearchParams(query),
+        signal,
+    }) as Promise<RESTGetAPIGuildMessagesSearchResult>;
 }

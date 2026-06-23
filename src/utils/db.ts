@@ -14,7 +14,8 @@ export type HoneypotConfig = {
     "reinvite" |
     "timeout-first" |
     "only-recent-delete" |
-    "many-honeypots"
+    "many-honeypots" |
+    "ensure-msg-delete"
   )[]
 };
 

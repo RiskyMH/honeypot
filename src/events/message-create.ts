@@ -2,7 +2,7 @@ import { GatewayDispatchEvents, type RESTAPIMessageReference, RESTJSONErrorCodes
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { getDmChannelCache, getGuildInfo, getIsAlreadyModerating, getSubscribedChannelCache, setDmChannelCache, setIsAlreadyModerating, setSubscribedChannelCache, unsetIsAlreadyModerating } from "../utils/cache";
+import { addToEnsureMsgDeleteQueue, getDmChannelCache, getGuildInfo, getIsAlreadyModerating, getSubscribedChannelCache, setDmChannelCache, setIsAlreadyModerating, setSubscribedChannelCache, unsetIsAlreadyModerating } from "../utils/cache";
 import { CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 import { DiscordAPIError } from "@discordjs/rest";
@@ -69,15 +69,37 @@ const onMessage = async (
             return;
         }
 
-        // just for the fun of it to acknowledge it saw the message
+        // try to delete the triggering message (if experiment enabled), fallback to reaction, fallback to just logging
+        let deleteMessageStatus = Promise.withResolvers<boolean>();
         let emojiReact = null as null | Promise<any>
-        if (messageId) emojiReact = api.channels.addMessageReaction(
-            channelId,
-            messageId,
-            `honeypot:${CUSTOM_EMOJI_ID}`,
-            // this really doesn’t matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
-            { signal: AbortSignal.timeout(1000) }
-        ).catch(() => null);
+        if (messageId) {
+            if (HAS_MESSAGE_INTENT && config.experiments.includes("ensure-msg-delete")) {
+                api.channels.deleteMessage(
+                    channelId,
+                    messageId,
+                    { reason: "Triggered honeypot" }
+                ).then(() => deleteMessageStatus.resolve(true))
+                    .catch((err) => {
+                        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage)) {
+                            deleteMessageStatus.resolve(true);
+                            console.log(styleText("dim", `Triggering message already deleted: ${err}`));
+                        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage || err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                            deleteMessageStatus.resolve(false);
+                            console.log(styleText("dim", `Failed to delete triggering message, likely due to missing permissions or message already deleted: ${err}`));
+                        } else {
+                            deleteMessageStatus.resolve(false);
+                            console.log(`Failed to delete triggering message: ${err}`);
+                        }
+                    });
+            } else {
+                emojiReact = api.channels.addMessageReaction(
+                    channelId,
+                    messageId,
+                    `honeypot:${CUSTOM_EMOJI_ID}`,
+                    { signal: AbortSignal.timeout(1000) }
+                ).catch(() => null);
+            }
+        }
 
         if (config.action === 'disabled') return;
 
@@ -269,6 +291,7 @@ const onMessage = async (
 
         const moderatedCount = await db.getModeratedCount(guildId, channels.length > 1 ? matchedChannel.channel_id : null);
 
+        let hasAccessToLogChannel = true;
         try {
             // const reply = (messageId && channelId === matchedChannel.channel_id) ? {
             //     message_id: messageId,
@@ -320,6 +343,7 @@ const onMessage = async (
                     console.log(`Failed to send log message (MessageCreate handler): ${err}`);
                 }
             } else console.log(`Failed to send log message (MessageCreate handler): ${err}`);
+            hasAccessToLogChannel = false;
         }
 
         if (matchedChannel.msg_id && !config.experiments.includes("no-warning-msg")) try {
@@ -339,6 +363,20 @@ const onMessage = async (
             } else console.log(`Failed to update honeypot message (after banning): ${err}`);
         }
 
+        if (hasAccessToLogChannel && await deleteMessageStatus.promise === false) {
+            try {
+                // send error msg to log channel saying it doesnt have perms to delete messages
+                await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
+                    content: `The bot failed to manually delete the [triggering message](https://discord.com/channels/${guildId}/${matchedChannel.channel_id}/${matchedChannel.msg_id}), likely because it doesn't have permission to Manage Messages in that channel. Please check my permissions or disable the "Ensure Message Delete" experiment.`
+                        + `\n-# This message may be deleted properly by discord, however this experiment is to ensure there isn't anything left over by them.`,
+                    allowed_mentions: {},
+                });
+            } catch (err) {
+                console.log(`Failed to send message about missing permissions to delete messages to log channel: ${err}`);
+            }
+        } else if (await deleteMessageStatus.promise === true) {
+            addToEnsureMsgDeleteQueue(userId, guildId, redis);
+        }
     } catch (err) {
         console.error(`Error with MessageCreate handler: ${err}`);
     }
