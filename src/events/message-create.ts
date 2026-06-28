@@ -377,7 +377,7 @@ const onMessage = async (
             try {
                 // send error msg to log channel saying it doesnt have perms to delete messages
                 await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
-                    content: `The bot failed to manually delete the [triggering message](https://discord.com/channels/${guildId}/${matchedChannel.channel_id}/${matchedChannel.msg_id}), likely because it doesn't have permission to Manage Messages in that channel. Please check my permissions or disable the "Ensure Message Delete" experiment.`
+                    content: `The bot failed to manually delete the [triggering message](https://discord.com/channels/${guildId}/${matchedChannel.channel_id}/${messageId ?? ""}), likely because it doesn't have permission to Manage Messages in that channel. Please check my permissions or disable the "Ensure Message Delete" experiment.`
                         + `\n-# This message may be deleted properly by discord, however this experiment is to ensure there isn't anything left over by them.`,
                     allowed_mentions: {},
                 });

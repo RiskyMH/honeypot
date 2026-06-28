@@ -2,7 +2,7 @@ import type { API, RESTGetAPIGuildRoleMemberCountsResult, Snowflake } from "@dis
 import type { API as API2 } from "@discordjs/core/http-only";
 import { makeURLSearchParams, type RequestData } from "@discordjs/rest";
 import { Routes } from "discord-api-types/v10";
-import type { RESTGetAPIGuildMessagesSearchQuery, RESTGetAPIGuildMessagesSearchResult } from "discord-api-types/v9";
+import type { RESTGetAPIGuildMessagesSearchQuery, RESTGetAPIGuildMessagesSearchResult } from "discord-api-types/v10";
 
 /**
  * Fetches role member counts for a guild.

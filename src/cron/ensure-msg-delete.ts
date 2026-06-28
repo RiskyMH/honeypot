@@ -70,13 +70,13 @@ const cron: Cron = {
             const minAge = Date.now() - NINETY_SECONDS;
             const deleteMap = new Map<string, Map<string, number>>();
             const monitorMap = new Map<string, Map<string, number>>();
-            const processedEntries: string[] = [];
+            const entryGuildMap = new Map<string, string>();
             let totalDeleted = 0;
             let totalMonitorFound = 0;
             for (const entry of entries) {
                 const parsed = parseQueueEntry(entry, minAge);
                 if (!parsed) continue;
-                processedEntries.push(entry);
+                entryGuildMap.set(entry, parsed.guildId);
                 const { userId, ts, guildId, isMonitor } = parsed;
                 const map = isMonitor ? monitorMap : deleteMap;
                 let userMap = map.get(guildId);
@@ -89,10 +89,14 @@ const cron: Cron = {
             }
             if (deleteMap.size === 0 && monitorMap.size === 0) return;
 
+            const successfulGuildIds = new Set<string>();
             const allGuildIds = new Set([...deleteMap.keys(), ...monitorMap.keys()]);
             for (const guildId of allGuildIds) {
                 const config = await db.getConfig(guildId);
-                if (!config) continue;
+                if (!config) {
+                    successfulGuildIds.add(guildId);
+                    continue;
+                }
                 // if (!config.experiments.includes("ensure-msg-delete")) continue;
 
                 const deleteUserMap = deleteMap.get(guildId);
@@ -119,6 +123,7 @@ const cron: Cron = {
                     }
                 }
 
+                let hadSearchError = false;
                 for (let i = 0; i < allUserIds.length; i += MAX_AUTHOR_IDS) {
                     const batch = allUserIds.slice(i, i + MAX_AUTHOR_IDS);
                     const deleteChannelMap = new Map<string, string[]>();
@@ -164,6 +169,7 @@ const cron: Cron = {
                             offset += SEARCH_LIMIT;
                             hasMore = offset < totalResults;
                         } catch (err) {
+                            hadSearchError = true;
                             console.log(`[ensure-msg-delete] Search failed for guild: ${err}`);
                             break;
                         }
@@ -180,13 +186,34 @@ const cron: Cron = {
                     }
                 }
 
+                if (!hadSearchError) successfulGuildIds.add(guildId);
                 await Bun.sleep(500); // avoid rate limits as its only a minor background noise task
             }
 
             if (totalMonitorFound > 0 || totalDeleted > 0) {
                 console.log(`[ensure-msg-delete] Force deleted ${totalDeleted} messages (${deleteMap.size} guilds), ${totalMonitorFound} messages left lingering (${monitorMap.size} guilds)`);
             }
-            await removeFromEnsureMsgDeleteQueue(processedEntries, redis);
+
+            // Only remove entries from successfully processed guilds
+            const processedEntries = entries.filter(e => {
+                const guildId = entryGuildMap.get(e);
+                return guildId && successfulGuildIds.has(guildId);
+            });
+            if (processedEntries.length > 0) {
+                await removeFromEnsureMsgDeleteQueue(processedEntries, redis);
+            }
+
+            // Cleanup stale entries (older than 24h) that slipped through
+            const MAX_ENTRY_AGE = 24 * 60 * 60 * 1000;
+            const staleEntries = entries.filter(entry => {
+                const colonIdx = entry.indexOf(":");
+                if (colonIdx === -1) return true;
+                const ts = parseInt(entry.slice(0, colonIdx), 10);
+                return isNaN(ts) || Date.now() - ts > MAX_ENTRY_AGE;
+            });
+            if (staleEntries.length > 0) {
+                await removeFromEnsureMsgDeleteQueue(staleEntries, redis);
+            }
         } finally {
             running = false;
         }
