@@ -24,7 +24,7 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
         }
 
         // if it's a normal message, only trigger if it's not a bot (to avoid spam as we trust actual bots more)
-        if (!message.author.bot) {
+        if (!message.author.bot && !message.author.system) {
             return await onMessage({
                 userId: message.author.id,
                 channelId: message.channel_id,
@@ -54,12 +54,17 @@ const onMessage = async (
     redis?: Bun.RedisClient
 ) => {
     try {
-        if (!process.env.HAS_PROXY_WS && redis && !(await getSubscribedChannelCache(guildId, redis))?.includes(channelId)) return;
+        if (!process.env.HAS_PROXY_WS && redis) {
+            const channels = await getSubscribedChannelCache(guildId, redis)
+            if (channels && !channels.includes(channelId)) return;
+        }
 
         const result = await db.getConfigWithChannels(guildId);
         if (!result) return;
+
         const { config, channels } = result;
         if (!config || !config.action) return;
+
         const matchedChannel = channels.find(c => c.channel_id === channelId);
         if (!matchedChannel) {
             if (redis) {
@@ -114,7 +119,7 @@ const onMessage = async (
         const preActionAbort = AbortSignal.timeout(3500);
 
         let forwardPromise = null as null | Promise<any>;
-        if (HAS_MESSAGE_INTENT && config.experiments.includes("forward-message") && config.log_channel_id && messageId && msgType) {
+        if (HAS_MESSAGE_INTENT && config.experiments.includes("forward-message") && config.log_channel_id && messageId && msgType !== undefined) {
             // intentionally not awaited as in theory we can do DM and this at same time (and avoid extra wait-time)
             const forwardableMsgTypes = [MessageType.Default, MessageType.Reply, MessageType.ChatInputCommand, MessageType.ContextMenuCommand];
             if (forwardableMsgTypes.includes(msgType)) {
@@ -136,7 +141,7 @@ const onMessage = async (
                         console.log(`Failed to forward message to log channel: ${err}`);
                     }
                 });
-            } else {} // maybe handle other ones and say the type or smth
+            } else { } // maybe handle other ones and say the type or smth
         }
 
         let timeoutPromise = null as null | Promise<any>;

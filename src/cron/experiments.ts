@@ -73,9 +73,10 @@ const cron: Cron = {
                         await Bun.sleep(1_000);
                         await channelWarmerExperiment(api, config.guild_id, channel.channel_id);
                     } catch (err) {
-                        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownChannel)) {
+                        const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
+                        if (discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
                             db.unsetHoneypotChannel(config.guild_id, channel.channel_id);
-                        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                        } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
                         } else {
@@ -88,12 +89,13 @@ const cron: Cron = {
                                 content: `⚠️ There was a problem sending a message to the <#${channel.channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
                                 allowed_mentions: {},
                             }).catch(err => {
-                                if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                                const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
+                                if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                                     console.log(styleText("dim", `Failed to send failed message for channel warmer experiment: ${err}`));
                                     // todo: if this happens enough times then remove the log channel from the config or something
-                                } else if (config.log_channel_id && err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownChannel)) {
+                                } else if (config.log_channel_id && discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
                                     db.unsetLogChannel(config.guild_id, config.log_channel_id);
-                                    console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
+                                    console.log(styleText("dim", `Failed to send failed message for channel warmer experiment: ${err}`));
                                 } else {
                                     console.log(`Failed to send failed message for channel warmer experiment: ${err}`);
                                 }
@@ -120,28 +122,35 @@ const cron: Cron = {
                             config.experiments.includes("random-channel-name-chaos")
                         )
                     } catch (err) {
-                        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownChannel)) {
+                        const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
+                        if (discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
                             db.unsetHoneypotChannel(config.guild_id, channel.channel_id);
-                        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                        } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Random channel name experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
                         } else {
                             console.log(`Random channel name experiment execution failed: ${err}`);
                         }
-                        await api.channels.createMessage(config.log_channel_id || channel.channel_id, {
-                            content: `⚠️ There was a problem updating the <#${channel.channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
-                            allowed_mentions: {},
-                        }).catch(err => {
-                            if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
-                                console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
-                                // todo: if this happens enough times then remove the log channel from the config or something
-                            } else if (config.log_channel_id && err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownChannel)) {
-                                db.unsetLogChannel(config.guild_id, config.log_channel_id);
-                                console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
-                            } else {
-                                console.log(`Failed to send failed message for random channel name experiment: ${err}`);
-                            }
-                        });
+
+                        // missing access means there is no way we can access that channel
+                        // so if there isnt a seperate log channel, no point sending a message that will always fail
+                        if ((discordErrorCode !== RESTJSONErrorCodes.MissingAccess && discordErrorCode !== RESTJSONErrorCodes.UnknownChannel) || config.log_channel_id) {
+                            await api.channels.createMessage(config.log_channel_id || channel.channel_id, {
+                                content: `⚠️ There was a problem updating the <#${channel.channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+                                allowed_mentions: {},
+                            }).catch(err => {
+                                const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
+                                if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
+                                    console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
+                                    // todo: if this happens enough times then remove the log channel from the config or something
+                                } else if (config.log_channel_id && discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
+                                    db.unsetLogChannel(config.guild_id, config.log_channel_id);
+                                    console.log(styleText("dim", `Failed to send failed message for random channel name experiment: ${err}`));
+                                } else {
+                                    console.log(`Failed to send failed message for random channel name experiment: ${err}`);
+                                }
+                            });
+                        }
                     }
                 }
             }

@@ -890,9 +890,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                         },
                                         {
                                             type: ComponentType.Button,
-                                            url: "https://discord.gg/BanFeVWyFP",
+                                            url: "https://honeypot.riskymh.dev/docs",
                                             style: ButtonStyle.Link,
-                                            label: "Support Server"
+                                            label: "Documentation"
                                         },
                                         {
                                             type: ComponentType.Button,

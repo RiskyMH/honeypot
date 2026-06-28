@@ -93,48 +93,50 @@ jobs:
             GIT_SHA=${{ github.sha }}
           # cache-from: type=gha
           # cache-to: type=gha,mode=max
-      - name: "[Events Image] Build & push image"
-        uses: docker/build-push-action@v6
-        if: ${{ needs.changes.outputs.events == 'true' || github.event_name == 'workflow_dispatch' }}
-        with:
-          context: .
-          file: ./Dockerfile.events
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
-      - name: "[ws Image] Build & push image"
-        uses: docker/build-push-action@v6
-        if: ${{ needs.changes.outputs.ws == 'true' || github.event_name == 'workflow_dispatch' }}
-        with:
-          context: .
-          file: ./Dockerfile.ws
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
-      - name: "[stats Image] Build & push image"
-        uses: docker/build-push-action@v6
-        if: ${{ needs.changes.outputs.stats == 'true' || github.event_name == 'workflow_dispatch' }}
-        with:
-          context: .
-          file: ./Dockerfile.stats
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+
+      - parallel:
+        - name: "[Events Image] Build & push image"
+          uses: docker/build-push-action@v6
+          if: ${{ needs.changes.outputs.events == 'true' || github.event_name == 'workflow_dispatch' }}
+          with:
+            context: .
+            file: ./Dockerfile.events
+            platforms: ${{ matrix.platform }}
+            push: true
+            tags: |
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
+            build-args: |
+              GIT_SHA=${{ github.sha }}
+            # cache-from: type=gha
+            # cache-to: type=gha,mode=max
+        - name: "[ws Image] Build & push image"
+          uses: docker/build-push-action@v6
+          if: ${{ needs.changes.outputs.ws == 'true' || github.event_name == 'workflow_dispatch' }}
+          with:
+            context: .
+            file: ./Dockerfile.ws
+            platforms: ${{ matrix.platform }}
+            push: true
+            tags: |
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
+            build-args: |
+              GIT_SHA=${{ github.sha }}
+            # cache-from: type=gha
+            # cache-to: type=gha,mode=max
+        - name: "[stats Image] Build & push image"
+          uses: docker/build-push-action@v6
+          if: ${{ needs.changes.outputs.stats == 'true' || github.event_name == 'workflow_dispatch' }}
+          with:
+            context: .
+            file: ./Dockerfile.stats
+            platforms: ${{ matrix.platform }}
+            push: true
+            tags: |
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:${{ env.SHORT_SHA }}-${{ matrix.platform_suffix }}
+            build-args: |
+              GIT_SHA=${{ github.sha }}
+            # cache-from: type=gha
+            # cache-to: type=gha,mode=max
 
   merge-docker-manifest:
     name: Deploy Docker
@@ -153,39 +155,45 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: "Create and Push All Multi-arch Manifests"
+
+      - name: Prepare lowercase owner
         run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          OWNER_LOWER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "OWNER_LOWER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-          if [ "${{ needs.changes.outputs.main }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+      - name: "[Main Image] Create and Push Multi-arch Manifest"
+        if: ${{ needs.changes.outputs.main == 'true' || github.event_name == 'workflow_dispatch' }}
+        run: |
           docker buildx imagetools create \
-            -t ghcr.io/$OWNER_LOWER/honeypot:$SHORT_SHA \
-            -t ghcr.io/$OWNER_LOWER/honeypot:latest \
-            ghcr.io/$OWNER_LOWER/honeypot:${SHORT_SHA}-x64 \
-            ghcr.io/$OWNER_LOWER/honeypot:${SHORT_SHA}-arm64
-          fi
+            -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot:${{ env.SHORT_SHA }} \
+            -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot:latest \
+            ghcr.io/${{ env.OWNER_LOWER }}/honeypot:${{ env.SHORT_SHA }}-x64 \
+            ghcr.io/${{ env.OWNER_LOWER }}/honeypot:${{ env.SHORT_SHA }}-arm64
 
-          if [ "${{ needs.changes.outputs.events }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-          docker buildx imagetools create \
-            -t ghcr.io/$OWNER_LOWER/honeypot-events:$SHORT_SHA \
-            -t ghcr.io/$OWNER_LOWER/honeypot-events:latest \
-            ghcr.io/$OWNER_LOWER/honeypot-events:${SHORT_SHA}-x64 \
-            ghcr.io/$OWNER_LOWER/honeypot-events:${SHORT_SHA}-arm64
-          fi
+      - parallel:
+        - name: "[Events Image] Create and Push Multi-arch Manifest"
+          if: ${{ needs.changes.outputs.events == 'true' || github.event_name == 'workflow_dispatch' }}
+          run: |
+            docker buildx imagetools create \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }} \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:latest \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }}-x64 \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-events:${{ env.SHORT_SHA }}-arm64
 
-          if [ "${{ needs.changes.outputs.ws }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-          docker buildx imagetools create \
-            -t ghcr.io/$OWNER_LOWER/honeypot-ws:$SHORT_SHA \
-            -t ghcr.io/$OWNER_LOWER/honeypot-ws:latest \
-            ghcr.io/$OWNER_LOWER/honeypot-ws:${SHORT_SHA}-x64 \
-            ghcr.io/$OWNER_LOWER/honeypot-ws:${SHORT_SHA}-arm64
-          fi
+        - name: "[ws Image] Create and Push Multi-arch Manifest"
+          if: ${{ needs.changes.outputs.ws == 'true' || github.event_name == 'workflow_dispatch' }}
+          run: |
+            docker buildx imagetools create \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }} \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:latest \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }}-x64 \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-ws:${{ env.SHORT_SHA }}-arm64
 
-          if [ "${{ needs.changes.outputs.stats }}" = 'true' ] || [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-          docker buildx imagetools create \
-            -t ghcr.io/$OWNER_LOWER/honeypot-stats:$SHORT_SHA \
-            -t ghcr.io/$OWNER_LOWER/honeypot-stats:latest \
-            ghcr.io/$OWNER_LOWER/honeypot-stats:${SHORT_SHA}-x64 \
-            ghcr.io/$OWNER_LOWER/honeypot-stats:${SHORT_SHA}-arm64
-          fi
+        - name: "[stats Image] Create and Push Multi-arch Manifest"
+          if: ${{ needs.changes.outputs.stats == 'true' || github.event_name == 'workflow_dispatch' }}
+          run: |
+            docker buildx imagetools create \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:${{ env.SHORT_SHA }} \
+              -t ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:latest \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:${{ env.SHORT_SHA }}-x64 \
+              ghcr.io/${{ env.OWNER_LOWER }}/honeypot-stats:${{ env.SHORT_SHA }}-arm64

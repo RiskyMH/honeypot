@@ -30,14 +30,9 @@ export type ConfigWithChannels = {
   channels: HoneypotChannel[];
 };
 
-export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite",
-  process.env.DATABASE_READONLY === "1" ? {
-    readonly: true,
-  } : {
-    bigint: true, // bigits as bigint (postgres/mysql)
-    safeIntegers: true, // numbers as bigint (sqlite)
-  }
-);
+export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite", {
+  readonly: process.env.DATABASE_READONLY === "1" ? true : undefined,
+});
 
 interface Migration {
   version: number;
@@ -122,7 +117,7 @@ export async function initDb() {
     executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`;
 
-  const applied: { version: bigint | number }[] = await db`SELECT version FROM _migrations ORDER BY version ASC`.catch(() => [])
+  const applied: { version: number }[] = await db`SELECT version FROM _migrations ORDER BY version ASC`.catch(() => [])
   const appliedSet = new Set(applied.map(r => Number(r.version)));
 
   for (const m of migrations) {
@@ -151,27 +146,33 @@ export async function initDb() {
 
 function parseConfigRow(row: any): HoneypotConfig {
   return {
-    guild_id: row.guild_id.toString(),
-    log_channel_id: row.log_channel_id?.toString() ?? null,
+    guild_id: row.guild_id,
+    log_channel_id: row.log_channel_id ?? null,
     action: ['softban', 'ban', 'disabled'].includes(row.action) ? row.action : 'softban',
     experiments: JSON.parse(row.experiments || '[]'),
   };
 }
 
 export async function getConfig(guild_id: string): Promise<HoneypotConfig | null> {
-  const [row] = await db`SELECT guild_id, log_channel_id, action, experiments FROM honeypot_config WHERE guild_id = ${guild_id}`;
+  const [row] = await db`SELECT CAST(guild_id AS VARCHAR(20)) AS guild_id, CAST(log_channel_id AS VARCHAR(20)) AS log_channel_id, action, experiments FROM honeypot_config WHERE guild_id = ${guild_id}`;
   if (!row) return null;
   return parseConfigRow(row);
 }
 
-export async function getChannels(guild_id: string): Promise<HoneypotChannel[]> {
-  const rows = await db`SELECT * FROM honeypot_channels WHERE guild_id = ${guild_id} ORDER BY channel_id`;
-  return rows.map((r: any) => ({ guild_id: r.guild_id.toString(), channel_id: r.channel_id.toString(), msg_id: r.msg_id?.toString() ?? null }));
+export async function getChannels(guild_id: string): Promise<Omit<HoneypotChannel, 'guild_id'>[]> {
+  const rows = await db`SELECT CAST(channel_id AS VARCHAR(20)) AS channel_id, CAST(msg_id AS VARCHAR(20)) AS msg_id FROM honeypot_channels WHERE guild_id = ${guild_id} ORDER BY channel_id`;
+  return rows.map((r: any) => ({ channel_id: r.channel_id.toString(), msg_id: r.msg_id?.toString() ?? null }));
 }
 
 export async function getConfigWithChannels(guild_id: string): Promise<ConfigWithChannels | null> {
   const rows = await db`
-    SELECT cfg.*, ch.channel_id AS ch_channel_id, ch.msg_id AS ch_msg_id
+    SELECT 
+      CAST(cfg.guild_id AS VARCHAR(20)) AS guild_id, 
+      CAST(cfg.log_channel_id AS VARCHAR(20)) AS log_channel_id, 
+      cfg.action, 
+      cfg.experiments,
+      CAST(ch.channel_id AS VARCHAR(20)) AS ch_channel_id, 
+      CAST(ch.msg_id AS VARCHAR(20)) AS ch_msg_id
     FROM honeypot_config cfg
     LEFT JOIN honeypot_channels ch ON ch.guild_id = cfg.guild_id
     WHERE cfg.guild_id = ${guild_id}
@@ -212,10 +213,10 @@ export async function logModerateEvent(guild_id: string, user_id: string, channe
 export async function getModeratedCount(guild_id: string, channel_id?: string | null): Promise<number> {
   if (channel_id) {
     const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id} AND channel_id = ${channel_id}`;
-    return Number(row.count);
+    return row.count;
   } else {
     const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id}`;
-    return Number(row.count);
+    return row.count;
   }
 }
 
@@ -272,7 +273,7 @@ export async function getStats(): Promise<{ totalGuilds: number; totalModerated:
 
 
 export async function getGuildStats(guild_id: string): Promise<{ channel_id: string | null; moderatedCount: number; }[]> {
-  const rows = await db`SELECT channel_id, COUNT(*) as moderated_count FROM honeypot_events WHERE guild_id = ${guild_id} GROUP BY channel_id`;
+  const rows = await db`SELECT CAST(channel_id AS VARCHAR(20)) AS channel_id, COUNT(*) as moderated_count FROM honeypot_events WHERE guild_id = ${guild_id} GROUP BY channel_id`;
   return rows.map((row: any) => ({
     channel_id: row.channel_id?.toString() || null,
     moderatedCount: Number(row.moderated_count)
@@ -285,7 +286,7 @@ export async function getUserModeratedCount(user_id: string): Promise<number> {
 }
 
 export async function getGuildsWithExperiment(experiment: HoneypotConfig["experiments"][number]): Promise<HoneypotConfig[]> {
-  const rows = await db`SELECT guild_id, log_channel_id, action, experiments FROM honeypot_config WHERE experiments LIKE '%' || ${experiment} || '%'`;
+  const rows = await db`SELECT CAST(guild_id AS VARCHAR(20)) AS guild_id, CAST(log_channel_id AS VARCHAR(20)) AS log_channel_id, action, experiments FROM honeypot_config WHERE experiments LIKE '%' || ${experiment} || '%'`;
   return rows.map((row: any) => parseConfigRow(row));
 }
 export async function getHoneypotMessages(guild_id: string): Promise<{ warning_message: string | null; dm_message: string | null; log_message: string | null; }> {
@@ -346,7 +347,6 @@ export async function getFullStats(): Promise<{
   last7dEngagedGuilds: number;
   dailyStats: { date: string; moderations: number; engagedGuilds: number; }[];
 }> {
-
   const now = new Date();
 
   const sevenDaysAgo = new Date();
@@ -366,7 +366,7 @@ export async function getFullStats(): Promise<{
         (SELECT COUNT(*) FROM honeypot_events) AS moderations
     `,
     db`
-      SELECT timestamp, guild_id
+      SELECT timestamp, CAST(guild_id AS VARCHAR(20)) AS guild_id
       FROM honeypot_events
       WHERE timestamp >= ${fourteenDaysAgoStr}
       ORDER BY timestamp ASC;
@@ -382,7 +382,7 @@ export async function getFullStats(): Promise<{
     // skip events older than 14 days since they are irrelevant too old
     if (ts < fourteenDaysAgoStr) continue;
 
-    const gID = row.guild_id?.toString() ?? null;
+    const gID = row.guild_id ?? null;
 
     if (ts >= sevenDaysAgoStr) {
       last7dModerations++;
