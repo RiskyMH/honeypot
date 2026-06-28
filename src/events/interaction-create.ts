@@ -38,6 +38,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 };
                 const channels = result?.channels ?? [];
 
+                // some experiments we should only show to "power users" that may need it after seeing issues & not just clicking everything
+                const hasSomeHoneypotting = await db.getGuildHasSomeModerated(guildId);
+
                 const manyHoneypots = config.experiments.includes("many-honeypots");
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot",
@@ -108,10 +111,10 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                     { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
                                     { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
                                     { label: "Many Honeypots", value: "many-honeypots", description: "Ability to create multiple honeypot channels - must submit modal and re-run /honeypot to set them", default: config.experiments.includes("many-honeypots") },
-                                    HAS_MESSAGE_INTENT && { label: "Ensure Message Deletion (decently risky)", value: "ensure-msg-delete", description: "Search & delete leftover messages from moderated users 2min after moderation.", default: config.experiments.includes("ensure-msg-delete") },
+                                    HAS_MESSAGE_INTENT && hasSomeHoneypotting && { label: "Ensure Message Deletion (decently risky)", value: "ensure-msg-delete", description: "Search & delete leftover messages from moderated users 2min after moderation.", default: config.experiments.includes("ensure-msg-delete") },
                                 ] satisfies (APISelectMenuOption | false)[]).filter(e => !!e),
                                 min_values: 0,
-                                max_values: HAS_MESSAGE_INTENT ? 11 : 9,
+                                max_values: 9 + (HAS_MESSAGE_INTENT ? 1 : 0) + (HAS_MESSAGE_INTENT && hasSomeHoneypotting ? 1 : 0),
                                 required: false,
                             }
                         }

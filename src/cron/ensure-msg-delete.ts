@@ -39,11 +39,22 @@ function handleDeleteError(err: unknown) {
     const discordError = err instanceof DiscordAPIError ? err : null;
     if (discordError?.code === RESTJSONErrorCodes.UnknownMessage) {
         console.log(styleText("dim", `[ensure-msg-delete] Message already deleted: ${err}`));
+        return;
     } else if (discordError?.code === RESTJSONErrorCodes.MissingAccess || discordError?.code === RESTJSONErrorCodes.MissingPermissions) {
         console.log(styleText("dim", `[ensure-msg-delete] Delete failed: ${err}`));
         return;
     }
     console.log(`[ensure-msg-delete] Delete failed: ${err}`);
+}
+
+function parseQueueEntry(entry: string, minAge: number): { userId: string; ts: number; guildId: string; isMonitor: boolean } | null {
+    const isMonitor = entry.endsWith(":monitor");
+    const parts = isMonitor ? entry.slice(0, -8).split(":") : entry.split(":");
+    const [tsStr, userId, ...guildIdParts] = parts;
+    if (!tsStr || !userId) return null;
+    const ts = parseInt(tsStr, 10);
+    if (ts > minAge) return null;
+    return { userId, ts, guildId: guildIdParts.join(":"), isMonitor };
 }
 
 const cron: Cron = {
@@ -57,49 +68,61 @@ const cron: Cron = {
             if (entries.length === 0) return;
 
             const minAge = Date.now() - NINETY_SECONDS;
-            const guildMap = new Map<string, Map<string, number>>();
+            const deleteMap = new Map<string, Map<string, number>>();
+            const monitorMap = new Map<string, Map<string, number>>();
             const processedEntries: string[] = [];
             let totalDeleted = 0;
+            let totalMonitorFound = 0;
             for (const entry of entries) {
-                const [tsStr, userId, ...guildIdParts] = entry.split(":");
-                if (!tsStr || !userId) continue;
-                const ts = parseInt(tsStr, 10);
-                if (ts > minAge) continue;
+                const parsed = parseQueueEntry(entry, minAge);
+                if (!parsed) continue;
                 processedEntries.push(entry);
-                const guildId = guildIdParts.join(":");
-                let userMap = guildMap.get(guildId);
+                const { userId, ts, guildId, isMonitor } = parsed;
+                const map = isMonitor ? monitorMap : deleteMap;
+                let userMap = map.get(guildId);
                 if (!userMap) {
                     userMap = new Map();
-                    guildMap.set(guildId, userMap);
+                    map.set(guildId, userMap);
                 }
                 const existing = userMap.get(userId);
                 if (!existing || ts > existing) userMap.set(userId, ts);
             }
-            if (guildMap.size === 0) return;
+            if (deleteMap.size === 0 && monitorMap.size === 0) return;
 
-            for (const [guildId, userMap] of guildMap) {
+            const allGuildIds = new Set([...deleteMap.keys(), ...monitorMap.keys()]);
+            for (const guildId of allGuildIds) {
                 const config = await db.getConfig(guildId);
-                if (!config || !config.experiments.includes("ensure-msg-delete")) continue;
+                if (!config) continue;
+                // if (!config.experiments.includes("ensure-msg-delete")) continue;
+
+                const deleteUserMap = deleteMap.get(guildId);
+                const monitorUserMap = monitorMap.get(guildId);
+                const allUserMaps = [deleteUserMap, monitorUserMap].filter(Boolean) as Map<string, number>[];
 
                 let minTimestamp = Infinity;
                 let maxTimestamp = -Infinity;
-                for (const ts of userMap.values()) {
-                    if (ts < minTimestamp) minTimestamp = ts;
-                    if (ts > maxTimestamp) maxTimestamp = ts;
+                for (const userMap of allUserMaps) {
+                    for (const ts of userMap.values()) {
+                        if (ts < minTimestamp) minTimestamp = ts;
+                        if (ts > maxTimestamp) maxTimestamp = ts;
+                    }
                 }
 
                 const minSnowflake = timestampToSnowflake(minTimestamp - TEN_MINUTES);
                 const maxSnowflake = timestampToSnowflake(maxTimestamp);
 
-                const userIds = [...userMap.keys()];
+                const allUserIds = [...new Set([...(deleteUserMap?.keys() ?? []), ...(monitorUserMap?.keys() ?? [])])];
                 const userMaxSnowflakes = new Map<string, string>();
-                for (const [userId, ts] of userMap) {
-                    userMaxSnowflakes.set(userId, timestampToSnowflake(ts));
+                for (const userMap of allUserMaps) {
+                    for (const [userId, ts] of userMap) {
+                        userMaxSnowflakes.set(userId, timestampToSnowflake(ts));
+                    }
                 }
 
-                for (let i = 0; i < userIds.length; i += MAX_AUTHOR_IDS) {
-                    const batch = userIds.slice(i, i + MAX_AUTHOR_IDS);
-                    const channelMap = new Map<string, string[]>();
+                for (let i = 0; i < allUserIds.length; i += MAX_AUTHOR_IDS) {
+                    const batch = allUserIds.slice(i, i + MAX_AUTHOR_IDS);
+                    const deleteChannelMap = new Map<string, string[]>();
+                    let monitorFoundInBatch = 0;
 
                     let offset = 0;
                     let hasMore = true;
@@ -124,10 +147,14 @@ const cron: Cron = {
                                 for (const msg of msgs) {
                                     const userMax = userMaxSnowflakes.get(msg.author.id);
                                     if (!userMax || msg.id > userMax) continue;
-                                    let ids = channelMap.get(msg.channel_id);
+                                    if (!deleteUserMap?.has(msg.author.id)) {
+                                        monitorFoundInBatch++;
+                                        continue;
+                                    }
+                                    let ids = deleteChannelMap.get(msg.channel_id);
                                     if (!ids) {
                                         ids = [];
-                                        channelMap.set(msg.channel_id, ids);
+                                        deleteChannelMap.set(msg.channel_id, ids);
                                     }
                                     ids.push(msg.id);
                                     totalDeleted++;
@@ -136,31 +163,28 @@ const cron: Cron = {
 
                             offset += SEARCH_LIMIT;
                             hasMore = offset < totalResults;
-
-                            if (hasMore) await Bun.sleep(1_000);
                         } catch (err) {
                             console.log(`[ensure-msg-delete] Search failed for guild: ${err}`);
                             break;
                         }
                     }
 
-                    for (const [channelId, msgIds] of channelMap) {
+                    totalMonitorFound += monitorFoundInBatch;
+
+                    for (const [channelId, msgIds] of deleteChannelMap) {
                         try {
                             await deleteMessages(api, channelId, msgIds, guildId);
                         } catch (err) {
                             console.log(`[ensure-msg-delete] Delete failed: ${err}`);
                         }
-                        // await Bun.sleep(100);
                     }
-
-                    // await Bun.sleep(1_000);
                 }
 
-                await Bun.sleep(1_000);
+                await Bun.sleep(500); // avoid rate limits as its only a minor background noise task
             }
 
-            if (totalDeleted > 0) {
-                console.log(`[ensure-msg-delete] Manually deleted ${totalDeleted} messages across ${guildMap.size} guilds`);
+            if (totalMonitorFound > 0 || totalDeleted > 0) {
+                console.log(`[ensure-msg-delete] Force deleted ${totalDeleted} messages (${deleteMap.size} guilds), ${totalMonitorFound} messages left lingering (${monitorMap.size} guilds)`);
             }
             await removeFromEnsureMsgDeleteQueue(processedEntries, redis);
         } finally {

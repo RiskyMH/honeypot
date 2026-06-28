@@ -280,6 +280,11 @@ export async function getGuildStats(guild_id: string): Promise<{ channel_id: str
   }));
 }
 
+export async function getGuildHasSomeModerated(guild_id: string): Promise<boolean> {
+  const [row] = await db`SELECT EXISTS (SELECT 1 FROM honeypot_events WHERE guild_id = ${guild_id} LIMIT 1 OFFSET 2) as has_some;`;
+  return Boolean(row.has_some);
+}
+
 export async function getUserModeratedCount(user_id: string): Promise<number> {
   const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE user_id = ${user_id}`;
   return Number(row.count);

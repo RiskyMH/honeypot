@@ -75,32 +75,36 @@ const onMessage = async (
         }
 
         // try to delete the triggering message (if experiment enabled), fallback to reaction, fallback to just logging
-        let deleteMessageStatus = Promise.withResolvers<boolean>();
+        let deleteMessageStatus = null as null | Promise<boolean | null>;
         let emojiReact = null as null | Promise<any>
         if (messageId) {
-            if (HAS_MESSAGE_INTENT && config.experiments.includes("ensure-msg-delete")) {
-                api.channels.deleteMessage(
+            if (HAS_MESSAGE_INTENT && config.experiments.includes("ensure-msg-delete") && config.action !== 'disabled') {
+                // try to delete it so we know if it actually has permission to delete rest of server's ones
+                // and also so user doesn't see it in any capacity (ie shows them that its working and they can't post here)
+                deleteMessageStatus = api.channels.deleteMessage(
                     channelId,
                     messageId,
                     { reason: "Triggered honeypot" }
-                ).then(() => deleteMessageStatus.resolve(true))
+                ).then(() => true)
                     .catch((err) => {
                         if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage)) {
-                            deleteMessageStatus.resolve(true);
                             console.log(styleText("dim", `Triggering message already deleted: ${err}`));
-                        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage || err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
-                            deleteMessageStatus.resolve(false);
-                            console.log(styleText("dim", `Failed to delete triggering message, likely due to missing permissions or message already deleted: ${err}`));
+                            return true;
+                        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                            console.log(styleText("dim", `Failed to delete triggering message, likely due to missing permissions: ${err}`));
+                            return false;
                         } else {
-                            deleteMessageStatus.resolve(false);
                             console.log(`Failed to delete triggering message: ${err}`);
+                            return false;
                         }
                     });
             } else {
+                // just for the fun of it to acknowledge it saw the message
                 emojiReact = api.channels.addMessageReaction(
                     channelId,
                     messageId,
                     `honeypot:${CUSTOM_EMOJI_ID}`,
+                    // this really doesn’t matter, so lets not have it get stuck in ratelimit queue if bot gets enough usage
                     { signal: AbortSignal.timeout(1000) }
                 ).catch(() => null);
             }
@@ -368,7 +372,8 @@ const onMessage = async (
             } else console.log(`Failed to update honeypot message (after banning): ${err}`);
         }
 
-        if (hasAccessToLogChannel && await deleteMessageStatus.promise === false) {
+        const succeededToDelete = deleteMessageStatus ? await deleteMessageStatus : null;
+        if (hasAccessToLogChannel && succeededToDelete === false) {
             try {
                 // send error msg to log channel saying it doesnt have perms to delete messages
                 await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
@@ -379,8 +384,13 @@ const onMessage = async (
             } catch (err) {
                 console.log(`Failed to send message about missing permissions to delete messages to log channel: ${err}`);
             }
-        } else if (await deleteMessageStatus.promise === true) {
+        } else if (!failed && succeededToDelete === true && HAS_MESSAGE_INTENT) {
             addToEnsureMsgDeleteQueue(userId, guildId, redis);
+        } else if (!failed && HAS_MESSAGE_INTENT) {
+            // temporarily just monitor it to see how bad this problem is
+            // in future, only check the messages if experiment and the invoking message is still present
+            // or hope discord fixes the issue and we can remove this experiment entirely
+            addToEnsureMsgDeleteQueue(userId, guildId, redis, undefined, true);
         }
     } catch (err) {
         console.error(`Error with MessageCreate handler: ${err}`);
