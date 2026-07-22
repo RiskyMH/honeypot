@@ -128,4 +128,4 @@ Disputes are governed by the laws of Australia.
 
 ### Contact
 
-For support, join the Discord server https://discord.gg/wYZa4Fpwfy or contact the owner RiskyMH at https://riskymh.dev.
+For support, join the Discord server https://discord.gg/haFKuBssU7 or contact the owner RiskyMH at https://riskymh.dev.
