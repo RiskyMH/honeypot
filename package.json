@@ -23,18 +23,18 @@
   },
   "devDependencies": {
     "@types/bun": "npm:bun-types@^1.3.14",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@discordjs/core": "3.0.0-dev.1782606054-b9c59f784",
-    "@discordjs/rest": "3.0.0-dev.1782606054-b9c59f784",
-    "@discordjs/ws": "3.0.0-dev.1782606054-b9c59f784",
-    "discord-api-types": "^0.38.49"
+    "@discordjs/core": "3.0.0-dev.1784593104-219ad7ba0",
+    "@discordjs/rest": "3.0.0-dev.1784593104-219ad7ba0",
+    "@discordjs/ws": "3.0.0-dev.1784593104-219ad7ba0",
+    "discord-api-types": "^0.38.51"
   },
   "overrides": {
-    "discord-api-types": "https://github.com/discordjs/discord-api-types#85d2619"
+    "discord-api-types": "https://github.com/discordjs/discord-api-types#7d8064a"
   },
   "patchedDependencies": {
-    "discord-api-types@github:discordjs/discord-api-types#85d2619": "patches/discord-api-types.patch"
+    "discord-api-types@github:discordjs/discord-api-types#7d8064a": "patches/discord-api-types.patch"
   }
 }
