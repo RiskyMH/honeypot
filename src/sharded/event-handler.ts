@@ -53,10 +53,10 @@ const listen = async () => {
     redis.publish("discord_ws_config", wsConfig)
 
     while (runLoop) try {
-        if (currentlyRunning > 1000) {
+        if (currentlyRunning > 10_000) {
             console.warn(`Currently running ${currentlyRunning} event handlers, waiting 100ms to hopefully not infinitely overload server...`);
             await Bun.sleep(100);
-        } else if (currentlyRunning > 500) {
+        } else if (currentlyRunning > 1_000) {
             console.warn(`Currently running ${currentlyRunning} event handlers, waiting 10ms to hopefully not infinitely overload server...`);
             await Bun.sleep(10);
         }
