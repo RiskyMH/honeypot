@@ -1,5 +1,13 @@
-import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, ButtonStyle, type APIUser, type APIComponentInContainer } from "discord-api-types/v10";
+import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, ButtonStyle, type APIUser, type APIComponentInContainer, type PartialAPIMessageInteractionGuildMember, type APIThumbnailComponent } from "discord-api-types/v10";
 import type { HoneypotConfig } from "./db";
+import { getDiscordDate, getDiscordDateMention } from "./tools";
+
+const honeypotThumbnail: APIThumbnailComponent = {
+  type: ComponentType.Thumbnail,
+  media: {
+    url: "https://honeypot.riskymh.dev/honeypot.png"
+  }
+}
 
 export function honeypotWarningMessage(
   moderatedCount: number = 0,
@@ -24,19 +32,12 @@ export function honeypotWarningMessage(
         components: ([
           (messageText || !imageUrls) ? {
             type: ComponentType.Section,
-            components: [
-              {
-                type: ComponentType.TextDisplay,
-                content: messageText?.replace(/\{\{action(:text)?\}\}/g, actionText)
-                  || `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **${actionText}**.`
-              }
-            ],
-            accessory: {
-              type: ComponentType.Thumbnail,
-              media: {
-                url: "https://honeypot.riskymh.dev/honeypot.png"
-              }
-            }
+            components: [{
+              type: ComponentType.TextDisplay,
+              content: messageText?.replace(/\{\{action(:text)?\}\}/g, actionText)
+                || `## DO NOT SEND MESSAGES IN THIS CHANNEL\n\nThis channel is used to catch spam bots. Any messages sent here will result in **${actionText}**.`
+            }],
+            accessory: honeypotThumbnail
           } as const : null,
           (imageUrls && imageUrls.length > 0) ? {
             type: ComponentType.MediaGallery,
@@ -69,9 +70,51 @@ const pastTenseActionText = {
   softban: 'kicked',
   disabled: '???it is disabled???'
 } as const
-export function honeypotUserDMMessage(action: HoneypotConfig["action"], guildName: string, discoverableLink: string | undefined, link: string, reinviteUrl: string | null, isAdmin = false, customText?: string | null): RESTPostAPIChannelMessageJSONBody {
+export function honeypotUserDMMessage(userId: string, action: HoneypotConfig["action"], guildName: string, discoverableLink: string | undefined, link: string, reinviteUrl: string | null, isAdmin = false, customText?: string | null): RESTPostAPIChannelMessageJSONBody {
   const actionText = pastTenseActionText[action] || '???unknown action???';
-  const { text: messageText, imageUrls } = customText ? extractPossibleImages(customText) : { text: null, imageUrls: null };
+
+  let containerComponents: APIComponentInContainer[] = []
+  if (!customText) {
+    containerComponents = [
+      {
+        type: ComponentType.Section,
+        components: [
+          {
+            type: ComponentType.TextDisplay,
+            content: `## Honeypot Triggered\nHey <@${userId}>, you have been **${actionText}** from **${discoverableLink ? `[${guildName}](${discoverableLink})` : guildName}** for sending a message in the [honeypot](${link}) channel.`
+              + "\n\nThis may have happened if someone gained access to your account through malware, stolen sessions or leaked passwords. Please [recover your account](https://honeypot.riskymh.dev/blog/discord-account-hacked-recovery), scan your device and reinstall your OS if needed."
+          },
+          ...(reinviteUrl ? [{
+            type: ComponentType.TextDisplay,
+            content: (reinviteUrl ? `You can rejoin via ${reinviteUrl}` : "")
+          }] as const : []),
+        ],
+        accessory: honeypotThumbnail,
+      },
+    ]
+  } else {
+    const { text: messageText, imageUrls } = extractPossibleImages(customText);
+    if (messageText) containerComponents.push({
+      type: ComponentType.Section,
+      components: [{
+        type: ComponentType.TextDisplay,
+        content: messageText
+          .replace(/\{\{action(:text)?\}\}/g, actionText)
+          .replace(/\{\{server:name:?\}\}/g, guildName)
+          .replace(/\{\{server:name:linked\}\}/g, discoverableLink ? `[${guildName}](${discoverableLink})` : guildName)
+          .replace(/\{\{honeypot:channel:link\}\}/g, link)
+          .replace(/\{\{server:public-link\}\}/g, discoverableLink || "https://discord.com/servers")
+          .replace(/\{\{reinvite:link\}\}/g, reinviteUrl || "*<invite link not available>*")
+          .replace(/\{\{user:mention\}\}/g, `<@${userId}>`)
+      }],
+      accessory: honeypotThumbnail
+    })
+    if (imageUrls && imageUrls.length > 0) containerComponents.push({
+      type: ComponentType.MediaGallery,
+      items: imageUrls.map(url => ({ media: { url } }))
+    });
+  };
+
   return {
     flags: MessageFlags.IsComponentsV2,
     allowed_mentions: {},
@@ -80,71 +123,54 @@ export function honeypotUserDMMessage(action: HoneypotConfig["action"], guildNam
         type: ComponentType.Container,
         accent_color: 0xFFD700,
         components: [
-          ...(!imageUrls || messageText ? [{
-            type: ComponentType.Section,
-            components: [
-              {
-                type: ComponentType.TextDisplay,
-                content: messageText
-                  ?.replace(/\{\{action(:text)?\}\}/g, actionText)
-                  .replace(/\{\{server:name:?\}\}/g, guildName)
-                  .replace(/\{\{server:name:linked\}\}/g, discoverableLink ? `[${guildName}](${discoverableLink})` : guildName)
-                  .replace(/\{\{honeypot:channel:link\}\}/g, link)
-                  .replace(/\{\{server:public-link\}\}/g, discoverableLink || "https://discord.com/servers")
-                  .replace(/\{\{reinvite:link\}\}/g, reinviteUrl || "<invite link not available>")
-                  || (`## Honeypot Triggered\n\nYou have been **${actionText}** from **${discoverableLink ? `[${guildName}](${discoverableLink})` : guildName}** for sending a message in the [honeypot](${link}) channel.`
-                    + (reinviteUrl ? `\n\nOnce you have sorted out how your account spammed, you can rejoin via ${reinviteUrl}` : "")
-                  )
-              },
-              ...((!imageUrls || imageUrls.length == 0) ? [
-                {
-                  type: ComponentType.TextDisplay,
-                  content: `-# This is an automated message. Replies are not monitored.`
-                },
-              ] as const : []),
-            ],
-            accessory: {
-              type: ComponentType.Thumbnail,
-              media: {
-                url: "https://honeypot.riskymh.dev/honeypot.png"
-              }
-            }
-          }] : []),
-          ...((imageUrls && imageUrls.length > 0) ? [
-            {
-              type: ComponentType.MediaGallery,
-              items: imageUrls.map(url => ({ media: { url } }))
-            },
-            {
-              type: ComponentType.TextDisplay,
-              content: `-# This is an automated message. Replies are not monitored.`
-            },
-          ] as const : []),
+          ...containerComponents,
+          {
+            type: ComponentType.TextDisplay,
+            content: `-# Automated message sent on behalf of **${guildName}**. Replies are not monitored.`
+          },
         ]
       },
-      customText ? {
-        type: ComponentType.TextDisplay,
-        content: `-# This is a custom message from the owners of "${guildName}".`
-      } : isAdmin ? {
+      ...(isAdmin ? [{
         type: ComponentType.TextDisplay,
         content: `-# This is an example message: as an admin you can’t be ${actionText}.`
-      } : null,
-    ].filter(Boolean) as any[],
-  };
+      }] as const : [])
+    ]
+  }
 }
 
-export const defaultHoneypotUserDMMessage = "## Honeypot Triggered\n\nYou have been **{{action:text}}** from **{{server:name}}** for sending a message in the [honeypot]({{honeypot:channel:link}}) channel.";
-export const defaultHoneypotUserDMMessageReinvitePart = "\n\nOnce you have sorted out how your account spammed, you can rejoin via {{reinvite:link}}";
+export const defaultHoneypotUserDMMessage = "## Honeypot Triggered\n\nHey {{user:mention}}, you have been **{{action:text}}** from **{{server:name}}** for sending a message in the [honeypot]({{honeypot:channel:link}}) channel."
+  + "\n\nThis may have happened if someone gained access to your account through malware, stolen sessions or leaked passwords. Please [recover your account](https://honeypot.riskymh.dev/blog/discord-account-hacked-recovery), scan your device and reinstall your OS if needed.";
+export const defaultHoneypotUserDMMessageReinvitePart = "\n\nYou can rejoin via {{reinvite:link}}";
 
-export function logActionMessage(userId: string, honeypotChannelId: string, action: HoneypotConfig["action"], customText?: string | null, moderatedCount: number = 0): RESTPostAPIChannelMessageJSONBody {
+export function logActionMessage(user: Partial<APIUser> & { id: string }, member: PartialAPIMessageInteractionGuildMember | null, honeypotChannelId: string, action: HoneypotConfig["action"], customText?: string | null, moderatedCount: number = 0): RESTPostAPIChannelMessageJSONBody {
   const actionText = pastTenseActionText[action] || '???unknown action???';
-  const text = customText
-    ?.replace(/\{\{user:id\}\}/g, userId)
-    .replace(/\{\{user(:ping|:mention)?\}\}/g, `<@${userId}>`)
-    .replace(/\{\{action(:text)?\}\}/g, actionText)
-    .replace(/\{\{honeypot:channel(:mention|:ping)?\}\}/g, `<#${honeypotChannelId}>`)
-    .replace(/\{\{honeypot:moderation-count\}\}/g, moderatedCount.toLocaleString())
-    || `<@${userId}> was ${actionText} for triggering the honeypot in <#${honeypotChannelId}>\n-# User ID: \`${userId}\``
+  const mention = `<@${user.id}>`;
+  const channelMention = `<#${honeypotChannelId}>`;
+
+  const replacements: Record<string, string | (() => string)> = {
+    "user:id": user.id,
+    "user": mention, "user:ping": mention, "user:mention": mention,
+    "user:name": user?.username || user.id,
+    "user:global-name": user?.global_name || user?.username || user.id,
+    "user:created": () => getDiscordDateMention(getDiscordDate(user.id)),
+    "member:name": member?.nick || "*none*",
+    "member:nickname": member?.nick || "*none*",
+    "member:joined": member?.joined_at ? () => getDiscordDateMention(new Date(member.joined_at!)) : "*unknown join date?*",
+    "member:roles": member?.roles?.length ? () => member.roles.map(id => `<@&${id}>`).join(", ") : "*no roles*",
+    "action": actionText,
+    "action:text": actionText,
+    "honeypot:channel": channelMention,
+    "honeypot:channel:mention": channelMention,
+    "honeypot:channel:ping": channelMention,
+    "honeypot:moderation-count": () => moderatedCount.toLocaleString(),
+  };
+
+  const text =
+    customText?.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => {
+      const value = replacements[key];
+      if (value == null) return `{{${key}}}`;
+      return typeof value === "function" ? value() : value;
+    }) ?? `${mention} was ${actionText} for triggering the honeypot in ${channelMention}\n-# User ID: \`${user.id}\``;
 
   if (action !== 'ban') {
     return {
@@ -159,17 +185,15 @@ export function logActionMessage(userId: string, honeypotChannelId: string, acti
     components: [
       {
         type: ComponentType.Section,
-        components: [
-          {
-            type: ComponentType.TextDisplay,
-            content: text
-          }
-        ],
+        components: [{
+          type: ComponentType.TextDisplay,
+          content: text
+        }],
         accessory: {
           type: ComponentType.Button,
           style: ButtonStyle.Secondary,
           label: "Unban",
-          custom_id: `unban:${userId}`,
+          custom_id: `unban:${user.id}`,
         }
       }
     ]

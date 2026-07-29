@@ -7,6 +7,13 @@ export function getDiscordDate(discordId: string | bigint): number {
     return Number(unixTimestampMs);
 }
 
+export function getDiscordDateMention(date: Date | number): string {
+    if (typeof date === "number") {
+        return `<t:${Math.floor(date / 1000)}:R>`;
+    }
+    return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
+}
+
 export function hasPermission(permissions: bigint, permissionBit: bigint) {
     return (permissions & permissionBit) === permissionBit
         || (permissions & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator;

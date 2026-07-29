@@ -997,7 +997,9 @@ ${roleInfo.map(r => `-# - <@&${r.id}> ${r.isUser ? " **[user]**" : ""}${r.isBot 
                     const server = await getGuildInfo(api, guildId, AbortSignal.timeout(1000), redis).catch(() => null);
                     const reinviteCode = config?.experiments?.includes("reinvite") && await db.getReinvite(guildId);
                     const channelLink = channels?.[0] ? `https://discord.com/channels/${guildId}/${channels[0].channel_id}/${channels[0].msg_id ?? ""}` : `https://discord.com/channels/${guildId}`;
+                    const user = interaction.member?.user || interaction.user;
                     await replyEphemeral(honeypotUserDMMessage(
+                        user?.id || "0",
                         config?.action || "softban",
                         server?.name ?? guildId,
                         server?.isDiscoverable ? `https://discord.com/servers/${guildId}` : undefined,
@@ -1007,9 +1009,9 @@ ${roleInfo.map(r => `-# - <@&${r.id}> ${r.isUser ? " **[user]**" : ""}${r.isBot 
                         messageContent
                     ));
                 } else if (type === "log") {
-                    const userId = interaction.member?.user.id || interaction.user?.id || "0";
+                    const user = interaction.member?.user || interaction.user;
                     const channelId = channels?.[0]?.channel_id || "0";
-                    await replyEphemeral(logActionMessage(userId, channelId, config?.action || "softban", messageContent, 0));
+                    await replyEphemeral(logActionMessage(user || { id: "0" }, interaction.member || null, channelId, config?.action || "softban", messageContent, 0));
                 } else {
                     await replyEphemeral({
                         content: "Unknown message type for preview.",

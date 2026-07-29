@@ -1,4 +1,4 @@
-import { GatewayDispatchEvents, RESTJSONErrorCodes, MessageReferenceType, MessageType, ComponentType, MessageFlags, ButtonStyle } from "discord-api-types/v10";
+import { GatewayDispatchEvents, RESTJSONErrorCodes, MessageReferenceType, MessageType, ComponentType, MessageFlags, ButtonStyle, type APIUser, type PartialAPIMessageInteractionGuildMember } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
@@ -24,7 +24,8 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
                 guildId: message.guild_id,
                 messageId: message.id,
                 msgType: message.type,
-                userRoles: message.interaction?.member?.roles || []
+                fullMember: message.interaction?.member,
+                fullUser: message.interaction_metadata.user,
             }, api, db, redis);
         }
 
@@ -37,7 +38,8 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
                 guildId: message.guild_id,
                 messageId: message.id,
                 msgType: message.type,
-                userRoles: message.member?.roles || []
+                fullMember: message.member,
+                fullUser: message.author,
             }, api, db, redis);
         }
 
@@ -55,7 +57,8 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
 };
 
 const onMessage = async (
-    { userId, channelId, guildId, messageId, threadId, msgType, userRoles }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string, msgType?: MessageType, userRoles: string[] },
+    { userId, channelId, guildId, messageId, threadId, msgType, fullUser, fullMember }
+        : { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string, msgType?: MessageType, fullUser?: APIUser, fullMember?: PartialAPIMessageInteractionGuildMember },
     api: API | API2,
     db: typeof import("../utils/db"),
     redis?: Bun.RedisClient
@@ -104,7 +107,7 @@ const onMessage = async (
         const timeoutPromise = maybeTimeoutMember(api, guildId, userId, config, preActionAbort.signal)
 
         const guildInfo = await getGuildInfo(api, guildId, AbortSignal.timeout(500), redis).catch(() => null);
-        const permissionSkip = getPermissionSkip(guildInfo, userId, userRoles);
+        const permissionSkip = getPermissionSkip(guildInfo, userId, fullMember?.roles || []);
 
         const customMessages = await db.getHoneypotMessages(guildId);
         const dmMessage = maybeDmMember(api, db, guildId, channelId, userId, messageId, config, guildInfo, permissionSkip, customMessages?.dm_message, preActionAbort.signal, redis)
@@ -136,7 +139,7 @@ const onMessage = async (
 
         const moderatedCount = await db.getModeratedCount(guildId, channels.length > 1 ? matchedChannel.channel_id : null);
         await Promise.all([
-            logMessage(api, db, config, userId, guildId, matchedChannel, customMessages.log_message, moderatedCount, failed, permissionSkip),
+            logMessage(api, db, config, userId, guildId, matchedChannel, customMessages.log_message, moderatedCount, failed, permissionSkip, fullUser, fullMember),
             updateWarning(api, db, config, matchedChannel, moderatedCount, customMessages.warning_message, guildId),
             HAS_MESSAGE_INTENT && config.experiments.includes("ensure-msg-delete") && failed === false
                 ? addToEnsureMsgDeleteQueue(userId, guildId, redis) : null,
@@ -376,6 +379,7 @@ async function maybeDmMember(
         const reinviteCode = config.experiments.includes("reinvite") && await db.getReinvite(guildId);
         const link = `https://discord.com/channels/${guildId}/${channelId}/${messageId || ""}`;
         const dmContent = honeypotUserDMMessage(
+            userId,
             config.action,
             guild?.name ?? guildId!,
             guild?.isDiscoverable ? `https://discord.com/servers/${guildId}` : undefined,
@@ -409,13 +413,15 @@ async function logMessage(
     moderatedCount: number,
     failed: false | "permissions" | "admin" | "unban" | true,
     permissionSkip: "owner" | "admin" | false,
+    fullUser?: APIUser,
+    fullMember?: PartialAPIMessageInteractionGuildMember
 ) {
     if (!config.log_channel_id && !permissionSkip && !failed) return;
 
     try {
         if (config.log_channel_id && !failed && !permissionSkip) {
             await api.channels.createMessage(config.log_channel_id, {
-                ...logActionMessage(userId, matchedChannel.channel_id, config.action, customMessage, moderatedCount),
+                ...logActionMessage(fullUser || { id: userId }, fullMember || null, matchedChannel.channel_id, config.action, customMessage, moderatedCount),
                 allowed_mentions: { users: [userId] },
             });
         } else if (permissionSkip) {
