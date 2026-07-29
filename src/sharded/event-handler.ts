@@ -11,7 +11,7 @@ import { setCommandIdCache } from "../utils/cache";
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
 if (!process.env.REDIS_URL) throw new Error("REDIS_URL environment variable not set.");
-let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet most didn’t know this fact about discord tokens
+let applicationId = atob(token.split(".")[0]!); // i bet most didn’t know this fact about discord tokens
 
 process.title = "Honeypot Bot (riskymh.dev) - Event Handler Worker";
 process.env.HAS_PROXY_WS = "true";
