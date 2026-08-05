@@ -5,7 +5,7 @@ import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotU
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
-import { getDmChannelCache, getGuildInfo, removeFromDeleteMessageCache, setDmChannelCache, setSubscribedChannelCache } from "../utils/cache";
+import { getCommandIdCache, getDmChannelCache, getGuildInfo, removeFromDeleteMessageCache, setDmChannelCache, setSubscribedChannelCache } from "../utils/cache";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
 import { getDiscordDate, hasPermission, trim } from "../utils/tools";
@@ -448,6 +448,14 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     db.getConfig(guildId),
                     getGuildInfo(api, guildId, AbortSignal.timeout(500), redis).catch(() => null)
                 ]);
+
+                if (!config) {
+                    const commands = await getCommandIdCache()
+                    return api.interactions.reply(interaction.id, interaction.token, {
+                        content: `The honeypot needs to be created before configuring its messages. Run ${commands?.honeypot ? `</honeypot:${commands?.honeypot}>` : "`/honeypot`"} to set it up.`,
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
 
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot's Messages",
