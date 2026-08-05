@@ -105,3 +105,8 @@ diff --git a/package.json b/package.json
 +			"import": "./utils/v*.ts"
   		}
  	}
+@@ -127,3 +127,4 @@
+ 	"author": "Vlad Frangu <me@vladfrangu.dev>",
+ 	"license": "MIT",
++	"sideEffects": false,
+ 	"files": [

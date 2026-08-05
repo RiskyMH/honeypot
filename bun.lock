@@ -18,8 +18,10 @@
   },
   "patchedDependencies": {
     "discord-api-types@github:discordjs/discord-api-types#7d8064a": "patches/discord-api-types.patch",
+    "@vladfrangu/async_event_emitter@github:vladfrangu/async_event_emitter#877001a": "patches/@vladfrangu+async_event_emitter.patch",
   },
   "overrides": {
+    "@vladfrangu/async_event_emitter": "https://github.com/vladfrangu/async_event_emitter#877001a",
     "discord-api-types": "https://github.com/discordjs/discord-api-types#7d8064a",
   },
   "packages": {
@@ -83,7 +85,7 @@
 
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
-    "@vladfrangu/async_event_emitter": ["@vladfrangu/async_event_emitter@2.4.7", "", {}, "sha512-Xfe6rpCTxSxfbswi/W/Pz7zp1WWSNn4A0eW4mLkQUewCrXXtMj31lCg+iQyTkh/CkusZSq9eDflu7tjEDXUY6g=="],
+    "@vladfrangu/async_event_emitter": ["@vladfrangu/async_event_emitter@github:vladfrangu/async_event_emitter#877001a", {}, "vladfrangu-async_event_emitter-877001a", "sha512-34AV6UVwNWpQ/y4ekw3/k7LSD1Imtirn+LQrsnIA1lODK+BgNmEPFp3ll/l/jzjvrOp5fa/Ii+XRWDZvgpUL1w=="],
 
     "discord-api-types": ["discord-api-types@github:discordjs/discord-api-types#7d8064a", {}, "discordjs-discord-api-types-7d8064a", "sha512-MEkDQEZrZpauMGrUGIPJd4IpYEfupdQtPrQzRO+grj3xmFdAkNgdzDNoniPeDTe8+tH9VU3MYdgncgqEFc8lGQ=="],
 

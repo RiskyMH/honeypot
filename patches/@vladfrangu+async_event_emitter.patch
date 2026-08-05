@@ -1,0 +1,48 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -4,22 +4,22 @@
+   "description": "An event emitter implementation with async support in mind",
+-  "main": "./dist/index.cjs",
+-  "module": "./dist/index.mjs",
+-  "browser": "./dist/index.global.js",
+-  "unpkg": "./dist/index.global.js",
+-  "types": "./dist/index.d.ts",
++  "main": "./src/index.ts",
++  "module": "./src/index.ts",
++  "browser": "./src/index.ts",
++  "unpkg": "./src/index.ts",
++  "types": "./src/index.ts",
+   "exports": {
+     ".": {
+       "import": {
+-        "types": "./dist/index.d.mts",
+-        "default": "./dist/index.mjs"
++        "types": "./src/index.ts",
++        "default": "./src/index.ts"
+       },
+       "require": {
+-        "types": "./dist/index.d.ts",
+-        "default": "./dist/index.cjs"
++        "types": "./src/index.ts",
++        "default": "./src/index.ts"
+       },
+       "default": {
+-        "types": "./dist/index.d.ts",
+-        "default": "./dist/index.cjs"
++        "types": "./src/index.ts",
++        "default": "./src/index.ts"
+       }
+     }
+   },
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,6 @@
+ /* eslint-disable @typescript-eslint/ban-types */
+ /* eslint-disable @typescript-eslint/dot-notation */
+-import { inspect } from 'node-inspect-extracted';
++import { inspect } from 'node:util';
+ 
+ function validateListener(input: unknown): asserts input is (...args: unknown[]) => void {
+ 	if (typeof input !== 'function') {

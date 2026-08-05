@@ -32,9 +32,11 @@
     "discord-api-types": "^0.38.51"
   },
   "overrides": {
-    "discord-api-types": "https://github.com/discordjs/discord-api-types#7d8064a"
+    "discord-api-types": "https://github.com/discordjs/discord-api-types#7d8064a",
+    "@vladfrangu/async_event_emitter": "https://github.com/vladfrangu/async_event_emitter#877001a"
   },
   "patchedDependencies": {
-    "discord-api-types@github:discordjs/discord-api-types#7d8064a": "patches/discord-api-types.patch"
+    "discord-api-types@github:discordjs/discord-api-types#7d8064a": "patches/discord-api-types.patch",
+    "@vladfrangu/async_event_emitter@github:vladfrangu/async_event_emitter#877001a": "patches/@vladfrangu+async_event_emitter.patch"
   }
 }
