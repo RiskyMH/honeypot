@@ -126,11 +126,10 @@ export const invalidateCommandIdCache = (redis: Bun.RedisClient | null) => {
 }
 
 // set is already moderating (used when many channels exist and we want to avoid multiple moderations for same user at same time)
-export const setIsAlreadyModerating = (guildId: string, userId: string, redis: Bun.RedisClient) => {
-  redis.hsetex("is_moderating", "EX", 30, "FIELDS", 1, `${guildId}:${userId}`, "true");
-}
-export const getIsAlreadyModerating = (guildId: string, userId: string, redis: Bun.RedisClient) => {
-  return redis.hexists("is_moderating", `${guildId}:${userId}`);
+/** @returns true if already set */
+export const upsertIsAlreadyModerating = async (guildId: string, userId: string, redis: Bun.RedisClient): Promise<boolean> => {
+  const result = await redis.hsetex("is_moderating", "FNX", "EX", 30, "FIELDS", 1, `${guildId}:${userId}`, "true");
+  return result === 0
 }
 export const unsetIsAlreadyModerating = (guildId: string, userId: string, redis: Bun.RedisClient) => {
   redis.hdel("is_moderating", `${guildId}:${userId}`);

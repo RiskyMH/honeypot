@@ -2,7 +2,7 @@ import { GatewayDispatchEvents, RESTJSONErrorCodes, MessageReferenceType, Messag
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { addToEnsureMsgDeleteQueue, getDmChannelCache, getGuildInfo, getIsAlreadyModerating, getSubscribedChannelCache, setDmChannelCache, setIsAlreadyModerating, setSubscribedChannelCache, unsetIsAlreadyModerating } from "../utils/cache";
+import { addToEnsureMsgDeleteQueue, getDmChannelCache, getGuildInfo, getSubscribedChannelCache, setDmChannelCache, setSubscribedChannelCache, unsetIsAlreadyModerating, upsertIsAlreadyModerating } from "../utils/cache";
 import { CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 import { DiscordAPIError } from "@discordjs/rest";
@@ -94,10 +94,8 @@ const onMessage = async (
 
         if (config.action === 'disabled') return;
 
-        if (redis) {
-            if (await getIsAlreadyModerating(guildId, userId, redis))
-                return console.log(styleText("dim", "Already moderating user, skipping..."));
-            setIsAlreadyModerating(guildId, userId, redis);
+        if (redis && await upsertIsAlreadyModerating(guildId, userId, redis)) {
+            return console.log(styleText("dim", "Already moderating user, skipping..."));
         }
 
         const preActionPromise = Bun.sleep(2000)
