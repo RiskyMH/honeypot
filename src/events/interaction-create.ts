@@ -488,7 +488,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 min_length: Math.min(25, (messages?.warning_message?.length || 25)),
                                 max_length: 1500,
                                 required: false,
-                                value: messages?.warning_message || defaultHoneypotWarningMessage,
+                                value: messages?.warning_message?.slice(0, 1500) || defaultHoneypotWarningMessage,
                             },
                         },
                         {
@@ -502,7 +502,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 min_length: Math.min(25, (messages?.dm_message?.length || 25)),
                                 max_length: 1000,
                                 required: false,
-                                value: messages?.dm_message || getDmMessage(config, guild),
+                                value: (messages?.dm_message || getDmMessage(config, guild))?.slice(0, 1000),
                             },
                         },
                         {
@@ -516,7 +516,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 min_length: Math.min(25, (messages?.log_message?.length || 25)),
                                 max_length: 500,
                                 required: false,
-                                value: messages?.log_message || defaultLogActionMessage,
+                                value: messages?.log_message?.slice(0, 500) || defaultLogActionMessage,
                             },
                         },
                         {
