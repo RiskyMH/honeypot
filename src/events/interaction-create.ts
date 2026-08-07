@@ -400,6 +400,15 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }
                 }
 
+                // if running in channel named "honeypot" but isn't selected, make a ephemeral followup suggesting them to select it or remove duplicate
+                if (interaction.channel && interaction.channel.name === "honeypot" && !selectedChannelIds.includes(interaction.channel.id)) {
+                    api.interactions.followUp(applicationId, interaction.token, {
+                        content: `ℹ️ The channel you are currently in is named “honeypot” but it is not selected as a honeypot channel. You may want to select it or rename/remove the duplicate channel.`,
+                        flags: MessageFlags.Ephemeral,
+                        allowed_mentions: {},
+                    }).catch(() => null);
+                }
+
                 // run experiments that were just enabled immediately
                 if (!prevConfig?.experiments.includes("channel-warmer") && newConfig.experiments.includes("channel-warmer")) {
                     for (const id of selectedChannelIds) {
