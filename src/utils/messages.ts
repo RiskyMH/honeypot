@@ -126,7 +126,7 @@ export function honeypotUserDMMessage(userId: string, action: HoneypotConfig["ac
           ...containerComponents,
           {
             type: ComponentType.TextDisplay,
-            content: `-# Automated message sent on behalf of **${guildName}**. Replies are not monitored.`
+            content: `-# Automated message ${customText ? "customized by" : "sent on behalf of"} **${guildName}**. Replies are not monitored.`
           },
         ]
       },
