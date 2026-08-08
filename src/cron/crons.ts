@@ -20,18 +20,30 @@ export const runCrons = (api: API | API2, db: typeof import("../utils/db"), redi
         ensureMsgDeleteCron,
     ];
 
+    const cronJobs = [] as Bun.CronJob[];
+    let running = 0;
+
     for (const cron of crons) {
         if (cron.enabled === false) continue;
         if (cron.frequency === "once") {
+            running++;
             cron.run(api, db, redis).catch(err => {
                 console.log(`Error running cron ${cron.name}: ${err}`);
-            });
+            }).then(() => running--);
         } else {
-            Bun.cron(cron.frequency, () => {
+            const cronJob = Bun.cron(cron.frequency, () => {
+                running++;
                 cron.run(api, db, redis).catch(err => {
                     console.log(`Error running cron ${cron.name}: ${err}`);
-                });
+                }).then(() => running--);
             });
+            cronJobs.push(cronJob);
         }
+    }
+
+    return async () => {
+        for (const job of cronJobs) job.stop();
+        while (running > 0) await Bun.sleep(100);
+        return true;
     }
 }

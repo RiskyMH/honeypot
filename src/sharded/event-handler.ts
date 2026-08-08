@@ -47,6 +47,7 @@ const api = new API(rest);
 
 let runLoop = true;
 let currentlyRunning = 0
+let stopCrons = null as null | (() => Promise<boolean>);
 
 const listen = async () => {
     const wsConfig = JSON.stringify({
@@ -94,6 +95,7 @@ const listen = async () => {
 
     console.log("Loop stopped. Waiting for remaining handlers...");
 
+    await stopCrons?.();
     while (currentlyRunning > 0) await Bun.sleep(100);
     await rest.waitForAllListenersToComplete();
 
@@ -124,7 +126,7 @@ console.log("Event handler worker started.");
 // todo: consider this better because if this has replicas, then each instance will run the cron...
 if (process.env.REPLICA_ID === "1" || !process.env.REPLICA_ID) {
     // redisPubSub.subscribe("", async (message) => {});
-    runCrons(api, db, redis);
+    stopCrons = runCrons(api, db, redis);
     api.applicationCommands.bulkOverwriteGlobalCommands(applicationId, commandsPayload).then((cmds) => {
         const commandIdMap = cmds.reduce((acc, cmd) => { acc[cmd.name] = cmd.id; return acc; }, {} as Record<string, string>);
         setCommandIdCache(commandIdMap, redis)
