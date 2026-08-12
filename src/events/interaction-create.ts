@@ -1,11 +1,11 @@
 import { ButtonStyle, ChannelType, ComponentType, GatewayDispatchEvents, InteractionType, MessageFlags, PermissionFlagsBits, RESTJSONErrorCodes, SelectMenuDefaultValueType, TextInputStyle, type APIContainerComponent, type APIInteractionDataResolvedChannel, type APIModalInteractionResponseCallbackData, type APISelectMenuOption, type RESTPostAPIChannelMessageJSONBody, type APITextDisplayComponent } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { HoneypotConfig } from "../utils/db";
-import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, defaultLogActionMessage, logActionMessage, honeypotUserDMMessage, defaultHoneypotUserDMMessageReinvitePart } from "../utils/messages";
+import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, defaultLogActionMessage, logActionMessage, honeypotUserDMMessage, defaultHoneypotUserDMMessageReinvitePart, statsMessage } from "../utils/messages";
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
-import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
-import { getCommandIdCache, getDmChannelCache, getGuildInfo, removeFromDeleteMessageCache, setDmChannelCache, setSubscribedChannelCache } from "../utils/cache";
+import { HAS_MESSAGE_INTENT } from "../utils/constants";
+import { getCommandIdCache, getGuildInfo, removeFromDeleteMessageCache, setSubscribedChannelCache } from "../utils/cache";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
 import { getDiscordDate, hasPermission, trim } from "../utils/tools";
@@ -20,11 +20,11 @@ const containsBadWord = (text: string): string | null => {
 
 const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
     event: GatewayDispatchEvents.InteractionCreate,
-    handler: async ({ data: interaction, api, applicationId, redis, db }) => {
+    handler: async ({ data: interaction, api, redis, db }) => {
         const guildId = interaction.guild_id;
         const userId = interaction.member?.user.id || interaction.user?.id;
         if (!userId) return console.error("No user ID found in interaction, skipping????");
-        const userContextHash = Bun.hash(guildId + applicationId + userId).toString(16);
+        const userContextHash = Bun.hash(guildId + interaction.application_id + userId).toString(16);
 
         try {
             // slash command handler: show modal
@@ -144,7 +144,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                 const interactionReply = async (body: CreateInteractionResponseOptions) => {
                     if (await deferredPromise) {
-                        return api.interactions.editReply(applicationId, interaction.token, body);
+                        return api.interactions.editReply(interaction.application_id, interaction.token, body);
                     }
                     clearTimeout(deferTimeout);
                     return api.interactions.reply(interaction.id, interaction.token, body);
@@ -402,7 +402,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                 // if running in channel named "honeypot" but isn't selected, make a ephemeral followup suggesting them to select it or remove duplicate
                 if (interaction.channel && interaction.channel.name === "honeypot" && !selectedChannelIds.includes(interaction.channel.id)) {
-                    api.interactions.followUp(applicationId, interaction.token, {
+                    api.interactions.followUp(interaction.application_id, interaction.token, {
                         content: `ℹ️ The channel you are currently in is named “honeypot” but it is not selected as a honeypot channel. You may want to select it or rename/remove the duplicate channel.`,
                         flags: MessageFlags.Ephemeral,
                         allowed_mentions: {},
@@ -724,141 +724,52 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 return;
             }
 
-            // dm command to show stats
-            else if (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "stats") {
-                const { totalGuilds, totalModerated } = await db.getStats();
-                const userId = (interaction.user || interaction.member?.user)?.id
-                const userModeratedCount = userId ? await db.getUserModeratedCount(userId) : 0;
+            // dm command to show stats or button to show guild stats
+            else if (
+                (interaction.type === InteractionType.MessageComponent && interaction.data.custom_id === "moderated_count_button") ||
+                (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "stats")
+            ) {
+                let serverStatMsg = null as string | null;
+                let userStatMsg = null as string | null;
+                const { totalGuilds, totalModerated } = await db.getStats()
 
-                await api.interactions.reply(interaction.id, interaction.token, {
-                    flags: MessageFlags.IsComponentsV2,
-                    allowed_mentions: {},
-                    components: [
-                        {
-                            type: ComponentType.Container,
-                            components: [
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: [
-                                        `## ${CUSTOM_EMOJI} Honeypot Bot Statistics ${CUSTOM_EMOJI}`,
-                                        "",
-                                        `Total servers: \`${totalGuilds.toLocaleString()}\``,
-                                        `Total moderations: \`${totalModerated.toLocaleString()}\``,
-                                        `Times you've been #honeypot'd: \`${(userModeratedCount || 0).toLocaleString()}\``,
-                                    ].join("\n"),
-                                },
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: "-# Thank you for using [Honeypot Bot](https://honeypot.riskymh.dev) to keep your servers safe from unwanted bots!"
-                                },
-                                {
-                                    type: ComponentType.ActionRow,
-                                    components: [
-                                        {
-                                            type: ComponentType.Button,
-                                            url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
-                                            style: ButtonStyle.Link,
-                                            label: "Invite Bot",
-                                            emoji: { name: "honeypot", id: CUSTOM_EMOJI_ID }
-                                        },
-                                        {
-                                            type: ComponentType.Button,
-                                            url: "https://discord.gg/haFKuBssU7",
-                                            style: ButtonStyle.Link,
-                                            label: "Support Server"
-                                        },
-                                        {
-                                            type: ComponentType.Button,
-                                            url: "https://riskymh.dev",
-                                            style: ButtonStyle.Link,
-                                            label: "riskymh.dev"
-                                        },
-                                    ]
-                                },
-                            ],
-                        },
-                    ]
-                });
-            }
+                if (guildId) {
+                    const [guildStats, channels, recentModerations] = await Promise.all([
+                        db.getGuildStats(guildId),
+                        db.getChannels(guildId),
+                        db.getRecentGuildModerationCount(guildId, 7),
+                    ]);
 
-            // button to show guild stats
-            else if (interaction.type === InteractionType.MessageComponent && interaction.data.custom_id === "moderated_count_button") {
-                const [guildStats, channels, { totalGuilds, totalModerated }] = await Promise.all([
-                    db.getGuildStats(guildId!),
-                    db.getChannels(guildId!),
-                    db.getStats(),
-                ]);
+                    const channelLessStats = guildStats.find(s => s.channel_id === null)?.moderatedCount;
+                    const totalInGuild = guildStats.reduce((acc, stat) => acc + stat.moderatedCount, 0);
 
-                const guildStatsMapping: Record<string, number> = {};
-                const channelLessStats = guildStats.find(s => s.channel_id === null)?.moderatedCount;
-                for (const channel of channels) {
-                    const stat = guildStats.find(s => s.channel_id === channel.channel_id);
-                    guildStatsMapping[channel.channel_id] = stat ? stat.moderatedCount : 0;
+                    serverStatMsg = `Total moderated in this server: \`${totalInGuild.toLocaleString()}\``;
+                    for (const channel of channels) {
+                        const stat = guildStats.find(s => s.channel_id === channel.channel_id);
+                        serverStatMsg += `\n-# - <#${channel.channel_id}>: \`${stat ? stat.moderatedCount.toLocaleString() : 0}\``;
+                    }
+                    if (channelLessStats && channelLessStats > 0) {
+                        serverStatMsg += `\n-# - *Removed honeypots*: \`${channelLessStats.toLocaleString()}\``;
+                    }
+                    if (recentModerations > 0) {
+                        serverStatMsg += `\nModerated in last 7 days: \`${recentModerations.toLocaleString()}\``;
+                    }
+                } else {
+                    const userId = (interaction.user || interaction.member?.user)?.id
+                    const userModeratedCount = userId ? await db.getUserModeratedCount(userId) : 0;
+                    userStatMsg = `Times you've been #honeypot'd: \`${userModeratedCount.toLocaleString()}\``
                 }
-                const totalInGuild = guildStats.reduce((acc, stat) => acc + stat.moderatedCount, 0);
 
-                await api.interactions.reply(interaction.id, interaction.token, {
-                    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-                    allowed_mentions: {},
-                    components: [
-                        {
-                            type: ComponentType.Container,
-                            components: [
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: `## ${CUSTOM_EMOJI} Honeypot Statistics ${CUSTOM_EMOJI}`,
-                                },
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: [
-                                        "**Server Stats:**",
-                                        `Total moderated in this server: \`${totalInGuild.toLocaleString()}\``,
-                                        ...(Object.keys(guildStatsMapping).length === 1 ? ""
-                                            : channels.map(chan => `-# - <#${chan.channel_id}>: \`${guildStatsMapping[chan.channel_id]?.toLocaleString() || 0}\``)),
-                                        channelLessStats && channelLessStats > 0 && guildStats.length > 1
-                                            ? `-# - *Removed honeypots*: \`${channelLessStats.toLocaleString()}\`` : ""
-                                    ].join("\n"),
-                                },
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: [
-                                        "**Global Stats:**",
-                                        `Total servers: \`${totalGuilds.toLocaleString()}\``,
-                                        `Total moderations: \`${totalModerated.toLocaleString()}\``,
-                                    ].join("\n"),
-                                },
-                                {
-                                    type: ComponentType.TextDisplay,
-                                    content: "-# Thank you for using [Honeypot Bot](https://honeypot.riskymh.dev) to keep your servers safe from unwanted bots!"
-                                },
-                                {
-                                    type: ComponentType.ActionRow,
-                                    components: [
-                                        {
-                                            type: ComponentType.Button,
-                                            url: `https://discord.com/oauth2/authorize?client_id=${interaction.application_id}`,
-                                            style: ButtonStyle.Link,
-                                            label: "Invite Bot",
-                                            emoji: { name: "honeypot", id: CUSTOM_EMOJI_ID }
-                                        },
-                                        {
-                                            type: ComponentType.Button,
-                                            url: "https://honeypot.riskymh.dev/docs",
-                                            style: ButtonStyle.Link,
-                                            label: "Documentation"
-                                        },
-                                        {
-                                            type: ComponentType.Button,
-                                            url: "https://honeypot.riskymh.dev/#stats",
-                                            style: ButtonStyle.Link,
-                                            label: "Live Stats"
-                                        },
-                                    ]
-                                },
-                            ],
-                        },
-                    ]
-                });
+                const globalStatsMsg =
+                    `Total servers: \`${totalGuilds.toLocaleString()}\`\n` +
+                    `Total moderations: \`${totalModerated.toLocaleString()}\``;
+
+                const msg = statsMessage(globalStatsMsg, serverStatMsg, userStatMsg)
+                await api.interactions.reply(interaction.id, interaction.token,
+                    interaction.type === InteractionType.MessageComponent
+                        ? { ...msg, flags: MessageFlags.Ephemeral | (msg.flags || 0) }
+                        : msg
+                );
             }
 
             // into welcome command to allow early deleting

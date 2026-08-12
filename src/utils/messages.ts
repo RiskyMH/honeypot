@@ -1,6 +1,7 @@
 import { type RESTPostAPIChannelMessageJSONBody, MessageFlags, ComponentType, ButtonStyle, type APIUser, type APIComponentInContainer, type PartialAPIMessageInteractionGuildMember, type APIThumbnailComponent } from "discord-api-types/v10";
 import type { HoneypotConfig } from "./db";
 import { getDiscordDate, getDiscordDateMention } from "./tools";
+import { CUSTOM_EMOJI_ID } from "./constants";
 
 const honeypotThumbnail: APIThumbnailComponent = {
   type: ComponentType.Thumbnail,
@@ -221,4 +222,103 @@ function extractPossibleImages(text: string): { text: string | null, imageUrls: 
     return { text: newText || null, imageUrls: imageUrls.reverse() };
   }
   return { text, imageUrls: null };
+}
+
+export function statsMessage(globalStatsText: string, serverStatsText: string | null, userStatsText: string | null): RESTPostAPIChannelMessageJSONBody {
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    allowed_mentions: {},
+    components: [
+      {
+        type: ComponentType.Container,
+        components: [
+          {
+            type: ComponentType.TextDisplay,
+            content: "## What is a Honeypot?",
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: "A **honeypot** is a channel used to detect unwanted activity.",
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: "Honeypot watches a channel that is visible to members but not intended for normal use. Spam bots and compromised accounts may send messages to it while scanning or posting across a server.",
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: "When a message is sent to the honeypot channel, Honeypot can automatically remove the user by banning or kicking them.",
+          },
+          {
+            type: ComponentType.ActionRow,
+            components: [
+              {
+                type: ComponentType.Button,
+                url: "https://discord.com/oauth2/authorize?client_id=1450060292716494940",
+                style: ButtonStyle.Link,
+                label: "Invite Bot",
+                emoji: { name: "honeypot", id: CUSTOM_EMOJI_ID }
+              },
+              {
+                type: ComponentType.Button,
+                url: "https://honeypot.riskymh.dev/docs",
+                style: ButtonStyle.Link,
+                label: "Documentation"
+              },
+              {
+                type: ComponentType.Button,
+                url: "https://honeypot.riskymh.dev",
+                style: ButtonStyle.Link,
+                label: "honeypot.riskymh.dev"
+              },
+            ]
+          },
+        ],
+      },
+      {
+        type: ComponentType.Container,
+        components: [
+          {
+            type: ComponentType.Section,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: "## Honeypot Statistics",
+              },
+              {
+                type: ComponentType.TextDisplay,
+                content: serverStatsText ? `**Server Stats:**\n${serverStatsText}`
+                  : userStatsText ? `**User Stats:**\n${userStatsText}`
+                    : "*No server or user stats available.*",
+              },
+            ],
+            accessory: honeypotThumbnail,
+          },
+          {
+            type: ComponentType.TextDisplay,
+            content: "**Global Stats:**\n" + globalStatsText,
+          },
+          {
+            type: ComponentType.Section,
+            components: [
+              {
+                type: ComponentType.TextDisplay,
+                content: `-# I wonder when this counter will stop increasing...\n-# ${[
+                  "Apparently, there is still plenty of spam to catch.",
+                  "That's a lot of spam messages caught so far.",
+                  "There is, unfortunately, no shortage of spam.",
+                  "Somehow, people are still finding the honeypot.",
+                ][Math.floor(Math.random() * 4)]}`,
+              }
+            ],
+            accessory: {
+              type: ComponentType.Button,
+              url: "https://honeypot.riskymh.dev/#stats",
+              style: ButtonStyle.Link,
+              label: "Live Stats"
+            }
+          },
+        ],
+      },
+    ]
+  } as const
 }

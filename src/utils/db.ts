@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS honeypot_events (
   guild_id BIGINT NOT NULL,
   user_id BIGINT NOT NULL,
   channel_id BIGINT,
-  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, -- (unix number in later migrations)
   FOREIGN KEY (guild_id) REFERENCES honeypot_config(guild_id) ON DELETE CASCADE,
   FOREIGN KEY (channel_id) REFERENCES honeypot_channels(channel_id) ON DELETE SET NULL
 );
@@ -93,6 +93,30 @@ CREATE INDEX IF NOT EXISTS idx_honeypot_events_channel_id ON honeypot_events(gui
 CREATE INDEX IF NOT EXISTS idx_honeypot_events_stats ON honeypot_events(timestamp, guild_id);
 `;
     },
+  },
+  {
+    version: 4,
+    name: "unix timestamps",
+    up: async (tx) => {
+      await tx`DROP INDEX IF EXISTS idx_honeypot_events_stats`;
+      if (db.options.adapter === "sqlite") {
+        await tx`ALTER TABLE honeypot_events ADD COLUMN timestamp_new BIGINT DEFAULT 0`;
+        await tx`UPDATE honeypot_events SET timestamp_new = CAST(strftime('%s', timestamp) AS BIGINT)`;
+        await tx`ALTER TABLE honeypot_events DROP COLUMN timestamp`;
+        await tx`ALTER TABLE honeypot_events RENAME COLUMN timestamp_new TO timestamp`;
+      } else if (db.options.adapter === "postgres") {
+        await tx`ALTER TABLE honeypot_events ALTER COLUMN timestamp TYPE BIGINT USING (EXTRACT(EPOCH FROM timestamp))::bigint`;
+      } else if (db.options.adapter === "mysql" || db.options.adapter === "mariadb") {
+        await tx`ALTER TABLE honeypot_events ADD COLUMN timestamp_new BIGINT DEFAULT 0`;
+        await tx`UPDATE honeypot_events SET timestamp_new = UNIX_TIMESTAMP(timestamp)`;
+        await tx`ALTER TABLE honeypot_events DROP COLUMN timestamp`;
+        await tx`ALTER TABLE honeypot_events CHANGE COLUMN timestamp_new timestamp BIGINT DEFAULT (UNIX_TIMESTAMP())`;
+      } else {
+        throw new Error(`Unsupported database adapter: ${db.options.adapter}`);
+      }
+      await tx`CREATE INDEX IF NOT EXISTS idx_honeypot_events_global_timeline ON honeypot_events(timestamp, guild_id)`;
+      await tx`CREATE INDEX IF NOT EXISTS idx_honeypot_events_guild_stats ON honeypot_events(guild_id, timestamp)`;
+    }
   }
 ];
 
@@ -208,7 +232,7 @@ export async function deleteConfig(guild_id: string) {
 }
 
 export async function logModerateEvent(guild_id: string, user_id: string, channel_id?: string) {
-  await db`INSERT INTO honeypot_events (guild_id, user_id, channel_id) VALUES (${guild_id}, ${user_id}, ${channel_id ?? null})`;
+  await db`INSERT INTO honeypot_events (guild_id, user_id, channel_id, timestamp) VALUES (${guild_id}, ${user_id}, ${channel_id ?? null}, ${Math.floor(Date.now() / 1000)})`;
 }
 
 export async function getModeratedCount(guild_id: string, channel_id?: string | null): Promise<number> {
@@ -289,6 +313,12 @@ export async function getGuildStats(guild_id: string): Promise<{ channel_id: str
   }));
 }
 
+export async function getRecentGuildModerationCount(guild_id: string, days: number = 7): Promise<number> {
+  const sinceDate = Date.now() - days * 24 * 60 * 60 * 1000;
+  const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id} AND timestamp >= ${sinceDate / 1000}`;
+  return Number(row.count);
+}
+
 export async function getGuildHasHoneypotHistory(guild_id: string): Promise<boolean> {
   const [row] = await db`SELECT EXISTS (SELECT 1 FROM honeypot_events WHERE guild_id = ${guild_id}) as has_history`;
   return Boolean(row.has_history);
@@ -363,15 +393,12 @@ export async function getFullStats(): Promise<{
 }> {
   const now = new Date();
 
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setUTCDate(now.getUTCDate() - 7);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().replace('T', ' ').substring(0, "YYYY-MM-DD HH:mm:ss".length);
+  // Calculate the start of today in UTC (00:00:00)
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayStartSec = Math.floor(todayStart.getTime() / 1000);
 
-  const fourteenDaysAgo = new Date();
-  fourteenDaysAgo.setUTCDate(now.getUTCDate() - 14);
-  const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().substring(0, "YYYY-MM-DD".length) + ' 00:00:00';
-
-  const todayStartStr = now.toISOString().substring(0, "YYYY-MM-DD".length) + ' 00:00:00';
+  const sevenDaysAgoSec = todayStartSec - (7 * 24 * 60 * 60);
+  const fourteenDaysAgoSec = todayStartSec - (14 * 24 * 60 * 60);
 
   const [[meta], events] = await Promise.all([
     db`
@@ -382,36 +409,38 @@ export async function getFullStats(): Promise<{
     db`
       SELECT timestamp, CAST(guild_id AS VARCHAR(20)) AS guild_id
       FROM honeypot_events
-      WHERE timestamp >= ${fourteenDaysAgoStr}
+      WHERE timestamp >= ${fourteenDaysAgoSec}
       ORDER BY timestamp ASC;
     `,
   ]);
 
   let last7dModerations = 0;
   const last7dGuilds = new Set<string>();
-  const dailyMap = new Map<string, { moderations: number; guilds: Set<string> }>();
+  const dailyMap = new Map<number, { moderations: number; guilds: Set<string> }>();
+
+  // Constant number of seconds in a single day
+  const SECONDS_IN_DAY = 24 * 60 * 60;
 
   for (const row of events) {
     const ts = row.timestamp;
-    // skip events older than 14 days since they are irrelevant too old
-    if (ts < fourteenDaysAgoStr) continue;
+    if (ts < fourteenDaysAgoSec) continue;
 
     const gID = row.guild_id ?? null;
 
-    if (ts >= sevenDaysAgoStr) {
+    if (ts >= sevenDaysAgoSec) {
       last7dModerations++;
       if (gID) last7dGuilds.add(gID);
     }
 
-    // skip todays events for daily stats since the day isnt over yet
-    if (ts >= todayStartStr) continue;
+    // Skip today's events for daily historical stats
+    if (ts >= todayStartSec) continue;
 
-    const date = ts.slice(0, "YYYY-MM-DD".length);
+    const dayStartTimestamp = ts - (ts % SECONDS_IN_DAY);
 
-    let day = dailyMap.get(date);
+    let day = dailyMap.get(dayStartTimestamp);
     if (!day) {
       day = { moderations: 0, guilds: new Set() };
-      dailyMap.set(date, day);
+      dailyMap.set(dayStartTimestamp, day);
     }
 
     day.moderations++;
@@ -424,10 +453,10 @@ export async function getFullStats(): Promise<{
     last7dModerations,
     last7dEngagedGuilds: last7dGuilds.size,
     dailyStats: Array.from(dailyMap.entries())
-      .map(([date, v]) => ({
-        date,
-        moderations: v.moderations,
-        engagedGuilds: v.guilds.size,
-      })),
+    .map(([dayTimestamp, v]) => ({
+      date: new Date(dayTimestamp * 1000).toISOString().split('T')[0]!,
+      moderations: v.moderations,
+      engagedGuilds: v.guilds.size,
+    })),
   };
 }
