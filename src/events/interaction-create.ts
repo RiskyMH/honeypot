@@ -1048,10 +1048,10 @@ function validateConfigPermissions(
     }
 
     if (config.experiments.includes("no-dm") && config.experiments.includes("reinvite")) {
-        issue(`“No DM” and “Reinvite” experiments are mutually exclusive.`);
+        issue(`“No DM” and “Reinvite” experiments can’t work together so they are mutually exclusive.`);
     }
     if (config.experiments.includes("forward-message") && config.experiments.includes("ensure-msg-delete")) {
-        issue(`“Forward Message” and “Ensure Message Delete” experiments are mutually exclusive.`);
+        issue(`“Forward Message” and “Ensure Message Delete” experiments can’t work together so they are mutually exclusive.`);
     }
     if (config.experiments.includes("forward-message") && !config.log_channel_id) {
         issue(`“Forward Message” experiment requires a log channel to be set.`);
