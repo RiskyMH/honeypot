@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY patches ./patches
 RUN bun install --frozen-lockfile
-# railway is dumb so lets not bother with being fancy here
+# railway isnt fancy lets not bother with being cool here
 # RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 COPY src ./src
