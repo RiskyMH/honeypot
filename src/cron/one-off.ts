@@ -8,6 +8,7 @@ const cron: Cron = {
     run: async (api, db, redis) => {
         if (redis) {
             const messagesToDelete = await getDeleteMessageCache(redis);
+            if (messagesToDelete.length === 0) return;
             await Bun.sleep(2 * 60 * 1000); // 2m
             for (const msg of messagesToDelete) {
                 if (!msg.channelId || !msg.messageId) continue;
