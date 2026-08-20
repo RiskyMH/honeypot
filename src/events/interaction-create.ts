@@ -971,7 +971,7 @@ function validateConfigPermissions(
     appPermissions: string,
 ): string[] {
     const errors: string[] = [];
-    const ch = (id: string) => channelResolvable?.[id]; 8
+    const ch = (id: string) => channelResolvable?.[id];
     const need = (ok: boolean, msg: string) => { if (!ok) errors.push(msg); };
     const issue = (msg: string) => errors.push(msg);
 

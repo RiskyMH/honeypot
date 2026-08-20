@@ -20,7 +20,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
         try {
             setGuildInfoCache(guild.id, guild, redis);
 
-            // if we already have config for this server, don't try to recreate (every bot resart creates this event) 
+            // if we already have config for this server, don't try to recreate (every bot restart creates this event) 
             let config = await db.getConfig(guild.id);
             if (config) return;
 
@@ -97,7 +97,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
                         redis?.publish("guild_count", "-1");
                         console.log(`Bot was shortly kicked after addition (prob anti nuke bot)`);
                     } else {
-                        console.log(`Failed to check if guild is still available after 10 seconds: ${err}`);
+                        console.log(`Failed to check if guild is still available after 25 seconds: ${err}`);
                     }
                 }
             }, 25_000);

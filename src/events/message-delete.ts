@@ -10,7 +10,7 @@ const handler: EventHandler<GatewayDispatchEvents.MessageDelete> = {
             await db.unsetHoneypotMsg(message.guild_id, message.id);
 
             // same thing as in message-create, if we have a proxy ws and the deleted message is not in a honeypot channel,
-            // we should still cache that this is not the right channel so we dont get unnessary spam
+            // we should still cache that this is not the right channel so we dont get unnecessary spam
             if (process.env.HAS_PROXY_WS && redis && message.guild_id) {
                 const result = await db.getConfigWithChannels(message.guild_id);
                 if (!result) return;

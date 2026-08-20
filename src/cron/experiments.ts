@@ -80,7 +80,7 @@ async function channelRecreateExperiment(api: API | API2, guildId: string, chann
             msgId = msg.id;
         } else {
             // just so it has has actually had a message there
-            const msg = await api.channels.createMessage(channelId, {
+            const msg = await api.channels.createMessage(newChannel.id, {
                 content: `New honeypot channel! ${CUSTOM_EMOJI}`,
                 allowed_mentions: {},
                 flags: MessageFlags.SuppressNotifications,

@@ -453,10 +453,10 @@ export async function getFullStats(): Promise<{
     last7dModerations,
     last7dEngagedGuilds: last7dGuilds.size,
     dailyStats: Array.from(dailyMap.entries())
-    .map(([dayTimestamp, v]) => ({
-      date: new Date(dayTimestamp * 1000).toISOString().split('T')[0]!,
-      moderations: v.moderations,
-      engagedGuilds: v.guilds.size,
-    })),
+      .map(([dayTimestamp, v]) => ({
+        date: new Date(dayTimestamp * 1000).toISOString().split('T')[0]!,
+        moderations: v.moderations,
+        engagedGuilds: v.guilds.size,
+      })),
   };
 }
