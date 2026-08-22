@@ -87,7 +87,7 @@ export function honeypotUserDMMessage(userId: string, action: HoneypotConfig["ac
           },
           ...(reinviteUrl ? [{
             type: ComponentType.TextDisplay,
-            content: (reinviteUrl ? `You can rejoin via ${reinviteUrl}` : "")
+            content: `You can rejoin via ${reinviteUrl}`
           }] as const : []),
         ],
         accessory: honeypotThumbnail,

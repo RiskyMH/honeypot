@@ -123,14 +123,14 @@ const cron: Cron = {
 
                     for (const [channelId, msgIds] of channelMessages) {
                         for (let j = 0; j < msgIds.length; j += BULK_DELETE_MAX) {
-                            const batch = msgIds.slice(j, j + BULK_DELETE_MAX);
+                            const toDelete = msgIds.slice(j, j + BULK_DELETE_MAX);
                             try {
-                                if (batch.length === 1) {
-                                    await api.channels.deleteMessage(channelId, batch[0]!, { reason: "Ensure message delete experiment" });
+                                if (toDelete.length === 1) {
+                                    await api.channels.deleteMessage(channelId, toDelete[0]!, { reason: "Ensure message delete experiment" });
                                 } else {
-                                    await api.channels.bulkDeleteMessages(channelId, batch, { reason: "Ensure message delete experiment" });
+                                    await api.channels.bulkDeleteMessages(channelId, toDelete, { reason: "Ensure message delete experiment" });
                                 }
-                                totalDeleted += batch.length;
+                                totalDeleted += toDelete.length;
                             } catch (err) {
                                 const code = err instanceof DiscordAPIError ? err.code : null;
                                 if (code === RESTJSONErrorCodes.UnknownMessage) {

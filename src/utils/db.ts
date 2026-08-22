@@ -238,10 +238,10 @@ export async function logModerateEvent(guild_id: string, user_id: string, channe
 export async function getModeratedCount(guild_id: string, channel_id?: string | null): Promise<number> {
   if (channel_id) {
     const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id} AND channel_id = ${channel_id}`;
-    return row.count;
+    return Number(row.count);
   } else {
     const [row] = await db`SELECT COUNT(*) as count FROM honeypot_events WHERE guild_id = ${guild_id}`;
-    return row.count;
+    return Number(row.count);
   }
 }
 
@@ -261,6 +261,8 @@ export async function unsetHoneypotMsg(guildId: string, messageId: string) {
 }
 
 export async function unsetHoneypotMsgs(guildId: string, messageIds: string[]) {
+  if (messageIds.length === 0) return;
+
   const row = await db`SELECT 1 FROM honeypot_channels WHERE guild_id = ${guildId} AND msg_id IN ${db(messageIds)}`;
   if (row.length === 0) return;
 

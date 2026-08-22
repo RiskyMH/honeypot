@@ -85,7 +85,7 @@ async function channelRecreateExperiment(api: API | API2, guildId: string, chann
                 allowed_mentions: {},
                 flags: MessageFlags.SuppressNotifications,
             });
-            await api.channels.deleteMessage(channelId, msg.id).catch(() => { });
+            await api.channels.deleteMessage(newChannel.id, msg.id).catch(() => { });
         }
     } catch (err) {
         console.log(`Error occurred while sending warning message in recreated channel: ${err}`);

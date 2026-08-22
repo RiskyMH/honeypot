@@ -177,9 +177,9 @@ const checkForResharding = async (force = false) => {
                 }
             }
             newManager.addListener(WebSocketShardEvents.Dispatch, dispatchEvent2);
-            manager.addListener(WebSocketShardEvents.Error, shardError);
-            if (process.env.NODE_ENV === "development") manager.addListener(WebSocketShardEvents.Debug, shardDebug);
-            manager.addListener(WebSocketShardEvents.Resumed, shardResume);
+            newManager.addListener(WebSocketShardEvents.Error, shardError);
+            if (process.env.NODE_ENV === "development") newManager.addListener(WebSocketShardEvents.Debug, shardDebug);
+            newManager.addListener(WebSocketShardEvents.Resumed, shardResume);
             try {
                 await newManager.connect();
             } catch (err) {

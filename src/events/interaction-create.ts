@@ -165,7 +165,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }
                     if (c.type === ComponentType.RadioGroup) {
                         if (c.custom_id === "honeypot_action" && c.value) {
-                            if (["kick", "ban", "disabled"].includes(c.value)) newConfig.action = c.value as any;
+                            if (["softban", "kick", "ban", "disabled"].includes(c.value)) newConfig.action = c.value as any;
                         }
                     }
                     if (c.type === ComponentType.StringSelect) {
@@ -459,7 +459,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 ]);
 
                 if (!config) {
-                    const commands = await getCommandIdCache()
+                    const commands = await getCommandIdCache(redis)
                     return api.interactions.reply(interaction.id, interaction.token, {
                         content: `The honeypot needs to be created before configuring its messages. Run ${commands?.honeypot ? `</honeypot:${commands?.honeypot}>` : "`/honeypot`"} to set it up.`,
                         flags: MessageFlags.Ephemeral
@@ -968,7 +968,7 @@ function validateConfigPermissions(
     channels: string[],
     channelResolvable: Record<string, APIInteractionDataResolvedChannel> | undefined,
     memberPermissions: string | undefined,
-    appPermissions: string,
+    appPermissions: string | undefined,
 ): string[] {
     const errors: string[] = [];
     const ch = (id: string) => channelResolvable?.[id];
@@ -1028,7 +1028,7 @@ function validateConfigPermissions(
     if (banActions.includes(config.action)) {
         need(!memberPermissions || hasPermission(BigInt(memberPermissions), PermissionFlagsBits.BanMembers),
             `You need the Ban Members permission to set the honeypot action to “${config.action}”.`);
-        need(hasPermission(BigInt(appPermissions), PermissionFlagsBits.BanMembers),
+        need(hasPermission(BigInt(appPermissions ?? "0"), PermissionFlagsBits.BanMembers),
             `I need the Ban Members permission to set the honeypot action to “${config.action}”.`);
     }
 
@@ -1043,7 +1043,7 @@ function validateConfigPermissions(
     if (config.experiments.includes("timeout-first")) {
         need(!memberPermissions || hasPermission(BigInt(memberPermissions), PermissionFlagsBits.ModerateMembers),
             `You need the Timeout Members permission to enable the “Timeout First” experiment.`);
-        need(hasPermission(BigInt(appPermissions), PermissionFlagsBits.ModerateMembers),
+        need(hasPermission(BigInt(appPermissions ?? "0"), PermissionFlagsBits.ModerateMembers),
             `I need the Timeout Members permission to enable the “Timeout First” experiment.`);
     }
 
