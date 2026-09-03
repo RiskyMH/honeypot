@@ -38,7 +38,8 @@ const redisBlocking = getRedis({ connectionTimeout: 1000, maxRetries: 1 });
 const redisPubSub = getRedis();
 
 const rest = new REST({
-    rejectOnRateLimit: ["/channels/:id/messages/:id/reactions"],
+    rejectOnRateLimit: (rateLimitData) =>
+        ["/channels/:id/messages/:id/reactions"].includes(rateLimitData.route),
     retries: 10,
     retryBackoff: (route, statusCode, retryCount) =>
         statusCode === null ? 0 : 500 * 2 ** retryCount
