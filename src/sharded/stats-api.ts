@@ -100,7 +100,7 @@ const server = Bun.serve({
             const stats = await getStats();
             ws.sendText(JSON.stringify(stats))
         },
-        close: (ws) => ws.unsubscribe("stats_update"),
+        close: (ws) => void ws.unsubscribe("stats_update"),
         message: () => { },
         drain: () => { },
     },

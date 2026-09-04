@@ -22,7 +22,7 @@
     "docker:logs:ws": "docker service logs -tf honeypot_discord-ws"
   },
   "devDependencies": {
-    "@types/bun": "npm:bun-types@^1.4.0",
+    "@types/bun": "npm:bun-types@^1.4.1",
     "typescript": "^7.0.2"
   },
   "dependencies": {
