@@ -148,7 +148,7 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
   const mention = `<@${user.id}>`;
   const channelMention = `<#${honeypotChannelId}>`;
 
-  const replacements: Record<string, string | (() => string)> = {
+  const replacements = {
     "user:id": user.id,
     "user": mention, "user:ping": mention, "user:mention": mention,
     "user:name": user?.username || user.id,
@@ -164,14 +164,16 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
     "honeypot:channel:mention": channelMention,
     "honeypot:channel:ping": channelMention,
     "honeypot:moderation-count": () => moderatedCount.toLocaleString(),
-  };
+  } satisfies Record<string, string | (() => string)>;
+  const str = (val: string | (() => string)) => typeof val === "function" ? val() : val; 
 
   const text =
-    customText?.replace(/\{\{([^}]+)\}\}/g, (_, key: string) => {
+    customText?.replace(/\{\{([^}]+)\}\}/g, (_, key: keyof typeof replacements) => {
       const value = replacements[key];
       if (value == null) return `{{${key}}}`;
       return typeof value === "function" ? value() : value;
-    }) ?? `${mention} was ${actionText} for triggering the honeypot in ${channelMention}\n-# User ID: \`${user.id}\``;
+    }) ?? `${mention} was ${actionText} for triggering the honeypot in ${channelMention}\n` +
+    `-# User ID: \`${user.id}\` • Created: ${replacements["user:created"]()} • Joined: ${str(replacements["member:joined"])}`;
 
   if (action !== 'ban') {
     return {
@@ -201,7 +203,7 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
   }
 }
 
-export const defaultLogActionMessage = "{{user:mention}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:mention}}\n-# User ID: `{{user:id}}`";
+export const defaultLogActionMessage = "{{user:mention}} was {{action:text}} for triggering the honeypot in {{honeypot:channel:mention}}\n-# User ID: `{{user:id}}` • Created: {{user:created}} • Joined: {{member:joined}}";
 
 
 const imageUrlRegex = /^https:\/\/[^\s\/]+\.[a-zA-Z]{2,}\/[^\s?#]*\.(?:png|jpg|jpeg|gif|webp|avif|mp4|mov)(?:[?#][^\s]*)?$/i;
