@@ -1,4 +1,4 @@
-import { GatewayDispatchEvents, RESTJSONErrorCodes, MessageReferenceType, MessageType, ComponentType, MessageFlags, ButtonStyle, type APIUser, type PartialAPIMessageInteractionGuildMember } from "discord-api-types/v10";
+import { GatewayDispatchEvents, RESTJSONErrorCodes, MessageReferenceType, MessageType, ComponentType, MessageFlags, ButtonStyle, type APIUser, type PartialAPIMessageInteractionGuildMember, AllowedMentionsTypes } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
@@ -420,17 +420,17 @@ async function logMessage(
         if (config.log_channel_id && !failed && !permissionSkip) {
             await api.channels.createMessage(config.log_channel_id, {
                 ...logActionMessage(fullUser || { id: userId }, fullMember || null, matchedChannel.channel_id, config.action, customMessage, moderatedCount),
-                allowed_mentions: { users: [userId] },
+                allowed_mentions: { parse: [AllowedMentionsTypes.User] },
             });
         } else if (permissionSkip) {
             await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                 content: `⚠️ User <@${userId}> triggered the honeypot, but they are ${permissionSkip === "owner" ? "the **server owner** so I cannot" : "a **server admin** so I won't"} ${config.action} them.\n-# In anycase **ensure my role is higher** than people's highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
-                allowed_mentions: { users: [userId] },
+                allowed_mentions: { users: [userId], roles: [] },
             });
         } else if (failed === "unban" && config.action === "softban") {
             await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                 content: `⚠️ User <@${userId}> triggered the honeypot, but I failed to **fully** softban them.\n-# They may still be banned but you can manually unban them in server settings.`,
-                allowed_mentions: { users: [userId] },
+                allowed_mentions: { users: [userId], roles: [] },
             });
         } else if (failed === "permissions") {
             await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
@@ -453,12 +453,12 @@ async function logMessage(
                             custom_id: `troubleshoot_ban:${userId}`,
                         }
                     }],
-                allowed_mentions: { users: [userId] },
+                allowed_mentions: { users: [userId], roles: [] },
             });
         } else if (failed) {
             await api.channels.createMessage(config.log_channel_id || matchedChannel.channel_id, {
                 content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# This could be due to a transient Discord issue, or something unexpected. Please check my permissions in any case.`,
-                allowed_mentions: { users: [userId] },
+                allowed_mentions: { users: [userId], roles: [] },
             });
         }
     } catch (err) {
