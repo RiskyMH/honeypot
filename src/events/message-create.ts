@@ -309,7 +309,7 @@ async function maybeForwardMessage(api: API | API2, guildId: string, channelId: 
         }
     }, { signal: preActionAbort }).catch(err => {
         const discordApiError = err instanceof DiscordAPIError ? err : null;
-        if (discordApiError && discordApiError.code === 160009) {
+        if (discordApiError && discordApiError.code === RESTJSONErrorCodes.CannotReferenceAMessageWithoutPermissionToReadMessageHistory) {
             api.channels.createMessage(config.log_channel_id!, {
                 content: `Would forward https://discord.com/channels/${guildId}/${channelId}/${messageId}, but the bot doesn't have permission to Read Message History in that channel.`,
                 allowed_mentions: {},
