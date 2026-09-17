@@ -94,12 +94,17 @@ async function channelRecreateExperiment(api: API | API2, guildId: string, chann
     try {
         await api.channels.delete(channelId, { reason: "Channel recreate experiment (replaced with new channel)" });
     } catch (err) {
-        console.log(`Error occurred while deleting channel (recreate experiment): ${err}`);
-        api.channels.createMessage(channelId, {
-            content: `⚠️ This channel was supposed to be deleted and replaced with <#${newChannel.id}> for the "Channel Recreate" experiment, but I was unable to delete it. This is no longer a watched honeypot channel.`,
-            allowed_mentions: {},
-            flags: MessageFlags.SuppressNotifications,
-        }).catch(() => { });
+        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownChannel)) {
+            // channel was already deleted, so no need to send a message
+            console.log(styleText("dim", `Error occurred while deleting channel (recreate experiment): ${err}`));
+        } else {
+            console.log(`Error occurred while deleting channel (recreate experiment): ${err}`);
+            api.channels.createMessage(channelId, {
+                content: `⚠️ This channel was supposed to be deleted and replaced with <#${newChannel.id}> for the "Channel Recreate" experiment, but I was unable to delete it. This is no longer a watched honeypot channel.`,
+                allowed_mentions: {},
+                flags: MessageFlags.SuppressNotifications,
+            }).catch(() => { });
+        }
     }
     return { channel: newChannel.id, message: msgId };
 }
