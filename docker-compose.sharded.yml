@@ -24,7 +24,7 @@ services:
       #  replicas: ${WS_REPLICAS:-1}
        resources:
          limits:
-           memory: 256M
+           memory: 512M
          reservations:
            memory: 25M
        update_config:
@@ -122,7 +122,7 @@ services:
    redis:
     image: redis:8.6.2-alpine3.23
     restart: unless-stopped
-    command: ["sh", "-c", "redis-server --port 0 --unixsocket /redis/redis.sock --unixsocketperm 777 --maxmemory 64mb --maxmemory-policy allkeys-lru --activedefrag yes"]
+    command: ["sh", "-c", "redis-server --port 0 --unixsocket /redis/redis.sock --unixsocketperm 777 --maxmemory 256mb --maxmemory-policy allkeys-lru --activedefrag yes"]
     volumes:
       - redis-data:/data
       - redis:/redis
@@ -136,7 +136,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 80M
+          memory: 512M
         reservations:
           memory: 8M
       update_config:
