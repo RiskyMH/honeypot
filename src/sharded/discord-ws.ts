@@ -230,6 +230,8 @@ try {
     process.exit(1);
 }
 
-if (sessionInfoCache[shardCount]?.size) checkForResharding();
 
-setInterval(checkForResharding, 12 * 60 * 60 * 1000); // twice every day
+// resharding isnt really needed
+// if (sessionInfoCache[shardCount]?.size) checkForResharding();
+
+// setInterval(checkForResharding, 12 * 60 * 60 * 1000); // twice every day
