@@ -73,7 +73,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 max_values: manyHoneypots ? 10 : 1,
                                 placeholder: "#honeypot",
                                 channel_types: [ChannelType.GuildText, ChannelType.GuildVoice],
-                                default_values: channels.length > 0 ? channels.slice(0, 10).map(c => ({ id: c.channel_id, type: SelectMenuDefaultValueType.Channel })) : [],
+                                default_values: channels.length > 0 ? channels.slice(0, manyHoneypots ? 10 : 1).map(c => ({ id: c.channel_id, type: SelectMenuDefaultValueType.Channel })) : undefined,
                                 required: true,
                             }
                         },
@@ -88,7 +88,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 max_values: 1,
                                 placeholder: "#mod-log",
                                 channel_types: [ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread],
-                                default_values: config.log_channel_id ? [{ id: config.log_channel_id, type: SelectMenuDefaultValueType.Channel }] : [],
+                                default_values: config.log_channel_id ? [{ id: config.log_channel_id, type: SelectMenuDefaultValueType.Channel }] : undefined,
                                 required: false,
                             }
                         },
