@@ -67,7 +67,7 @@ const listen = async () => {
             await Bun.sleep(10);
         }
 
-        const rawEvent = (await redisBlocking.blpop("discord_events", 0));
+        const rawEvent = await redisBlocking.blpop("discord_events", 0);
         if (!rawEvent) continue;
         const event = JSON.parse(rawEvent[1]) as GatewayDispatchPayload;
         if (!event) continue;
@@ -92,6 +92,8 @@ const listen = async () => {
         }
     } catch (err) {
         console.error("Error in event handler loop:", err);
+        // maybe wait a bit before retrying to avoid spamming errors if redis is down
+        await Bun.sleep(500);
     }
 
     console.log("Loop stopped. Waiting for remaining handlers...");
