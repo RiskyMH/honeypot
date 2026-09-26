@@ -11,11 +11,18 @@ import { honeypotWarningMessage } from "../utils/messages";
 import { removeGuildSubscribedChannelCache, setSubscribedChannelCache } from "../utils/cache";
 
 function shardId(id: string, total: number): number {
-    let hash = 5381;
-    for (let i = 0; i < id.length; i++) {
-        hash = ((hash << 5) + hash + id.charCodeAt(i)) | 0;
-    }
-    return (hash >>> 0) % total;
+    return Number((BigInt(id) >> 22n) % BigInt(total));
+}
+
+// Cron fires at :05, :20, :35, :50 UTC — map wall-clock to most recent past slot.
+function currentShardUTC(now = new Date()): number {
+    const h = now.getUTCHours();
+    const m = now.getUTCMinutes();
+    const schedule = [5, 20, 35, 50];
+    let q = -1;
+    for (let i = 0; i < schedule.length; i++) if (m >= (schedule[i] ?? 0)) q = i;
+    if (q === -1) return ((h + 23) % 24) * 4 + 3; // 00:00-00:04 -> prev day's last slot
+    return h * 4 + q;
 }
 
 export async function channelWarmerExperiment(api: API | API2, guildId: string, channelId: string) {
@@ -110,14 +117,14 @@ async function channelRecreateExperiment(api: API | API2, guildId: string, chann
 }
 
 
-const TOTAL_SHARDS = 24;
+const TOTAL_SHARDS = 96;
 
 const cron: Cron = {
     name: "Experiment Runner",
-    frequency: "@hourly",
+    frequency: "5,20,35,50 * * * *",
     run: async (api, db, redis) => {
         // intentionally only run one at a time with delay to avoid rate limits (as least important feature)
-        const currentShard = new Date().getHours();
+        const currentShard = currentShardUTC();
 
         // channel warmer experiment - send a msg and instantly delete it to keep channel active
         const channelWarmer = async () => {
