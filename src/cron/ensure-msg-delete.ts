@@ -6,6 +6,7 @@ import { searchForMessages } from "../utils/discord-api";
 import { getEnsureMsgDeleteQueue, removeFromEnsureMsgDeleteQueue } from "../utils/cache";
 import type { Cron } from "./crons";
 import { styleText } from "node:util";
+import { ignoredMessageTypes } from "../events/message-create";
 
 const NINETY_SECONDS = 90_000;
 const TEN_MINUTES = 600_000;
@@ -96,9 +97,10 @@ const cron: Cron = {
                             if (!result || !("total_results" in result)) break;
 
                             for (const msgs of result.messages ?? []) {
-                                for (const { channel_id, id, author } of msgs) {
+                                for (const { channel_id, id, author, type } of msgs) {
                                     const userMax = userMaxSnowflakes.get(author.id);
                                     if (!userMax || id > userMax) continue;
+                                    if (ignoredMessageTypes.has(type)) continue;
                                     let ids = channelMessages.get(channel_id);
                                     if (!ids) {
                                         ids = [];

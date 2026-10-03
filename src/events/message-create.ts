@@ -220,7 +220,7 @@ function getPermissionSkip(
 }
 
 
-const ignoredMessageTypes = new Set([
+export const ignoredMessageTypes = new Set([
     MessageType.UserJoin,
     MessageType.ChannelPinnedMessage,
     MessageType.GuildBoost,
