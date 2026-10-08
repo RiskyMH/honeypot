@@ -26,18 +26,18 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@discordjs/core": "3.0.0-dev.1786968995-99af6d8be",
-    "@discordjs/rest": "3.0.0-dev.1786968995-99af6d8be",
-    "@discordjs/ws": "3.0.0-dev.1786968995-99af6d8be",
-    "discord-api-types": "^0.38.55"
+    "@discordjs/core": "3.0.0-dev.1790856158-4dc1acc60",
+    "@discordjs/rest": "3.0.0-dev.1790856158-4dc1acc60",
+    "@discordjs/ws": "3.0.0-dev.1790856158-4dc1acc60",
+    "discord-api-types": "^0.38.56"
   },
   "overrides": {
     "@vladfrangu/async_event_emitter": "https://github.com/vladfrangu/async_event_emitter#877001a",
-    "discord-api-types": "https://github.com/discordjs/discord-api-types#7484c1d"
+    "discord-api-types": "https://github.com/discordjs/discord-api-types#865af57"
   },
   "patchedDependencies": {
     "@vladfrangu/async_event_emitter@github:vladfrangu/async_event_emitter#877001a": "patches/@vladfrangu+async_event_emitter.patch",
-    "discord-api-types@github:discordjs/discord-api-types#7484c1d": "patches/discord-api-types.patch"
+    "discord-api-types@github:discordjs/discord-api-types#865af57": "patches/discord-api-types.patch"
   },
   "trustedDependencies": []
 }
