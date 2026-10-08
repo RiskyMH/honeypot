@@ -67,7 +67,7 @@ const listen = async () => {
             await Bun.sleep(10);
         }
 
-        const rawEvent = await redisBlocking.blpop("discord_events", 0);
+        const rawEvent = await redisBlocking.blpop("discord_events:priority", "discord_events", 0);
         if (!rawEvent) continue;
         const event = JSON.parse(rawEvent[1]) as GatewayDispatchPayload;
         if (!event) continue;

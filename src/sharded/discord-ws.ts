@@ -23,11 +23,11 @@ const redis = getRedis();
 const redisPubSub = getRedis();
 const rest = new REST().setToken(token!);
 
-const getShards = async () => (await rest.get(Routes.gatewayBot()) as RESTGetAPIGatewayBotResult).shards;
+const fetchGatewayInformation = () => rest.get(Routes.gatewayBot()) as Promise<RESTGetAPIGatewayBotResult>;
+const getShards = async () => (await fetchGatewayInformation()).shards;
 const getManager = (shards: number, sessionCache: Map<number, SessionInfo | null> = new Map()) => new WebSocketManager({
     token,
     intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
-    fetchGatewayInformation: () => rest.get(Routes.gatewayBot()) as Promise<RESTGetAPIGatewayBotResult>,
     compression: process.env.COMPRESS_WEBSOCKETS === "true" ? CompressionMethod.ZstdNative : null,
     shardCount: shards,
     initialPresence,
@@ -88,7 +88,7 @@ const dispatchEvent = async (id: number, event: GatewayDispatchPayload, shardId:
     if (await shouldBroadcastEvent(event)) {
         // interactions are more important that we respond on time
         if (event.t === GatewayDispatchEvents.InteractionCreate) {
-            redis.lpush("discord_events", JSON.stringify(event));
+            redis.rpush("discord_events:priority", JSON.stringify(event));
         } else {
             redis.rpush("discord_events", JSON.stringify(event));
         }
@@ -181,7 +181,7 @@ const checkForResharding = async (force = false) => {
             if (process.env.NODE_ENV === "development") newManager.addListener(WebSocketShardEvents.Debug, shardDebug);
             newManager.addListener(WebSocketShardEvents.Resumed, shardResume);
             try {
-                await newManager.connect();
+                await newManager.connect({ gatewayInformation: await fetchGatewayInformation() });
             } catch (err) {
                 console.error(`Error connecting new WebSocket Manager during resharding: ${err}`);
                 newManager.destroy();
@@ -221,7 +221,7 @@ if (sessionInfoCache[shardCount]?.size) {
     console.log("Found existing session info in Redis, attempting to resume sessions...");
 }
 try {
-    await manager.connect();
+    await manager.connect({ gatewayInformation: await fetchGatewayInformation() });
 } catch (err) {
     console.error(`Error connecting WebSocket Manager: ${err}`);
     await redis.del("discord_ws_sessions").catch((err) => {
