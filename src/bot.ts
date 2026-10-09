@@ -30,7 +30,6 @@ const rest = new REST({ version: "10" }).setToken(token);
 const gateway = new WebSocketManager({
     token,
     intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
-    fetchGatewayInformation: () => rest.get(Routes.gatewayBot()) as Promise<RESTGetAPIGatewayBotResult>,
     shardCount: null,
     initialPresence,
 });
@@ -58,6 +57,6 @@ client.on(GatewayDispatchEvents.Ready, (c) => {
     });
 });
 
-gateway.connect();
+gateway.connect({ gatewayInformation: await rest.get(Routes.gatewayBot()) as RESTGetAPIGatewayBotResult });
 
 runCrons(client.api, db, redis || undefined);
