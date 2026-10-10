@@ -24,8 +24,7 @@ const redisPubSub = getRedis();
 const rest = new REST().setToken(token!);
 
 const fetchGatewayInformation = () => rest.get(Routes.gatewayBot()) as Promise<RESTGetAPIGatewayBotResult>;
-const getShards = async () => (await fetchGatewayInformation()).shards;
-const getManager = (shards: number, sessionCache: Map<number, SessionInfo | null> = new Map()) => new WebSocketManager({
+const getManager = (shards: number, sessionCache: Map<number, SessionInfo | null>) => new WebSocketManager({
     token,
     intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
     compression: process.env.COMPRESS_WEBSOCKETS === "true" ? CompressionMethod.ZstdNative : null,
@@ -36,10 +35,8 @@ const getManager = (shards: number, sessionCache: Map<number, SessionInfo | null
 });
 const managerState = "a" // update this when initial presense or intents changes (ie require shards to reconnect)
 
-const sessionInfoCache: Record<number, Map<number, SessionInfo | null>> = {};
-async function getSessionStorageFromRedis(_shardCount = 1) {
-    const _raw = await redis.hmget("discord_ws_sessions", managerState, `${managerState}_${_shardCount}`, `Z_${managerState}_${_shardCount}`, _shardCount.toString());
-    const raw = _raw[0] || _raw[1] || _raw[2] || _raw[3];
+async function getSessionStorageFromRedis() {
+    const raw = await redis.hget("discord_ws_sessions", managerState);
     if (raw) {
         const data = JSON.parse(raw) as Record<string, SessionInfo | null>;
         return new Map(Object.entries(data).map(([k, v]) => [parseInt(k), v]));
@@ -52,10 +49,20 @@ async function saveSessionStorageToRedis(sessionStorage: Map<number, SessionInfo
     await redis.hsetex("discord_ws_sessions", "EX", threeMinSecs, "FIELDS", 1, managerState, JSON.stringify(obj));
 }
 
-const prevSessionStorage = (await getSessionStorageFromRedis() || await getSessionStorageFromRedis(await getShards())) ?? new Map();
-sessionInfoCache[prevSessionStorage.size] = prevSessionStorage;
-let shardCount = prevSessionStorage.size || (await getShards());
-let manager = getManager(shardCount, sessionInfoCache[shardCount]);
+const prevSessionStorage = await getSessionStorageFromRedis();
+const sessionInfoCache: Record<number, Map<number, SessionInfo | null>> = {};
+let shardCount: number;
+if (prevSessionStorage?.size) {
+    shardCount = prevSessionStorage.size;
+    sessionInfoCache[shardCount] = prevSessionStorage;
+} else {
+    // easy way to make more at start and reduce need for resharding
+    const shardsMultiplier = process.env.INIT_SHARDS_MULTIPLIER ? parseInt(process.env.INIT_SHARDS_MULTIPLIER) : 1;
+
+    shardCount = (await fetchGatewayInformation()).shards * shardsMultiplier;
+    sessionInfoCache[shardCount] = new Map();
+}
+let manager = getManager(shardCount, sessionInfoCache[shardCount] ||= new Map());
 let isResharding = null as null | [WebSocketManager, number /* shard count */];
 let reshardedId = 0;
 
@@ -68,6 +75,7 @@ const onExit = async (type: string) => {
                 if (!possibleSessionCache.has(i)) possibleSessionCache.set(i, null);
             }
             await saveSessionStorageToRedis(possibleSessionCache);
+            console.log(`Saved session info for ${shardCount} shard(s) to Redis`);
         } catch (err) {
             console.error(`Error saving session storage to Redis on shutdown: ${err}`);
         }
@@ -153,7 +161,7 @@ function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean | Promise<
 // every day recheck if shard count has increased, if so make them run both at same time for a bit to hopefully avoid downtime, then kill old one
 const checkForResharding = async (force = false) => {
     try {
-        const newShardCount = (await getShards());
+        const newShardCount = (await fetchGatewayInformation()).shards;
         if (newShardCount > shardCount || force) {
             console.info(`\nShard count increased from ${shardCount} to ${newShardCount}, resharding...`);
 

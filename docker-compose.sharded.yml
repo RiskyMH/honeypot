@@ -12,6 +12,7 @@ services:
      environment:
        DISCORD_TOKEN: ${DISCORD_TOKEN:?REQUIRED}
        REDIS_URL: redis+unix:///redis/redis.sock
+       INIT_SHARDS_MULTIPLIER: ${INIT_SHARDS_MULTIPLIER:-1}
        REPLICA_ID: '{{.Task.Slot}}' 
        REPLICA_COUNT: 1 # ${WS_REPLICAS:-1}
        NODE_ENV: production
