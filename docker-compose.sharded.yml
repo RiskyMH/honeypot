@@ -134,7 +134,8 @@ services:
       LOG_LEVEL: ${NIRN_LOG_LEVEL:-error}
       REQUEST_TIMEOUT: ${NIRN_REQUEST_TIMEOUT:-5000}
       BOT_RATELIMIT_OVERRIDES: ${BOT_RATELIMIT_OVERRIDES:-}
-      DISABLE_HTTP_2: "false"
+      BUFFER_SIZE: ${NIRN_BUFFER_SIZE:-100}
+      # DISABLE_HTTP_2: "false"
     deploy:
       resources:
         limits:
