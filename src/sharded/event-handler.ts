@@ -1,7 +1,7 @@
 import { GatewayDispatchEvents, type GatewayDispatchPayload } from "discord-api-types/v10";
 import eventHandlers from "../events/events";
 import { API } from "@discordjs/core/http-only";
-import { REST } from "@discordjs/rest";
+import { createRest } from "../utils/nirn-rest";
 import * as db from "../utils/db";
 import { runCrons } from "../cron/crons";
 import { commandsPayload } from "../utils/commands";
@@ -37,13 +37,13 @@ const redis = getRedis();
 const redisBlocking = getRedis({ connectionTimeout: 1000, maxRetries: 1 });
 const redisPubSub = getRedis();
 
-const rest = new REST({
+const rest = createRest(token, {
     rejectOnRateLimit: (rateLimitData) =>
         ["/channels/:id/messages/:id/reactions"].includes(rateLimitData.route),
     retries: 10,
     retryBackoff: (route, statusCode, retryCount) =>
-        statusCode === null ? 0 : 500 * 2 ** retryCount
-}).setToken(token);
+        statusCode === null ? 0 : 500 * 2 ** retryCount,
+});
 const api = new API(rest);
 
 let runLoop = true;
