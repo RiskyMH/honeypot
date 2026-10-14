@@ -82,7 +82,7 @@ export class NirnRest extends REST {
                 res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal } as never);
             } catch (error) {
                 // network failure / abort: retry per `retries` + `retryBackoff` (`statusCode: null`)
-                if (attempt < this.options.retries) {
+                if (attempt < this.options.retries && request.signal?.aborted !== true) {
                     const backoff = normalizeBackoff(this.options.retryBackoff, request.fullRoute, null, attempt, request.body);
                     if (backoff === null) throw error;
                     if (backoff > 0) await Bun.sleep(backoff);
@@ -99,7 +99,8 @@ export class NirnRest extends REST {
             // exhausted retries (or `null` backoff) fall through to the error shaping below.
             if (
                 (res.status === 429 || (res.status >= 500 && res.status < 600) || res.status === 408) &&
-                attempt < this.options.retries
+                attempt < this.options.retries &&
+                request.signal?.aborted !== true
             ) {
                 const backoff = normalizeBackoff(this.options.retryBackoff, request.fullRoute, res.status, attempt, request.body);
                 if (backoff !== null) {
