@@ -192,10 +192,10 @@ async function sendIntroMessage(api: API | API2, redis: Bun.RedisClient | undefi
 - By default, any user that sends a message in this channel will be **automatically softbanned** (banned and instantly unbanned to delete last 1hr messages)
 - You can customise this and more with the ${getCommandMention("honeypot")} command and the custom messages it sends with ${getCommandMention("honeypot-messages")}!
 - **Tips for maximum effectiveness:**
-  - Rename this channel to something unique (e.g., \`${newName}\`) so bots can’t easily guess and blacklist it, but keep it clear for real members
+  - Rename this channel to something unique (e.g., \`#${newName}\`) so bots can’t easily guess and blacklist it, but keep it clear for real members
   - Keep it near the top of your channel list - bots often target the first few channels
   - Make sure the bot’s highest role is set above any self-assignable roles, so it can act on all users
-- If you have feedback or notice bots bypassing the honeypot, join our [support server](https://discord.gg/haFKuBssU7) or checkout out the [docs](https://honeypot.riskymh.dev/docs) and the open source [github repo](https://github.com/riskymh/honeypot)!
+- Learn more on our [website](https://honeypot.riskymh.dev "Honeypot's website"), in the [docs](https://honeypot.riskymh.dev/docs "Honeypot's documentation"), and on our open-source [GitHub repo](https://github.com/riskymh/honeypot "Honeypot's GitHub repo")!
 `.trim()
             },
             {
