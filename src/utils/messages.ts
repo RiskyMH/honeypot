@@ -165,7 +165,7 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
     "honeypot:channel:ping": channelMention,
     "honeypot:moderation-count": () => moderatedCount.toLocaleString(),
   } satisfies Record<string, string | (() => string)>;
-  const str = (val: string | (() => string)) => typeof val === "function" ? val() : val; 
+  const str = (val: string | (() => string)) => typeof val === "function" ? val() : val;
 
   const text =
     customText?.replace(/\{\{([^}]+)\}\}/g, (_, key: keyof typeof replacements) => {
@@ -176,6 +176,17 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
     `-# User ID: \`${user.id}\` • Created: ${replacements["user:created"]()} • Joined: ${str(replacements["member:joined"])}`;
 
   if (action !== 'ban') {
+    // force disable all embeds
+    if (text.includes("<https://discord.com/users/")) {
+      return {
+        flags: MessageFlags.IsComponentsV2,
+        allowed_mentions: {},
+        components: [{
+          type: ComponentType.TextDisplay,
+          content: text
+        }]
+      };
+    }
     return {
       flags: MessageFlags.SuppressEmbeds,
       allowed_mentions: {},
