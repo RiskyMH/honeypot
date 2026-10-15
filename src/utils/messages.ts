@@ -177,6 +177,7 @@ export function logActionMessage(user: Partial<APIUser> & { id: string }, member
 
   if (action !== 'ban') {
     return {
+      flags: MessageFlags.SuppressEmbeds,
       allowed_mentions: {},
       content: text
     };
