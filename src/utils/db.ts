@@ -31,6 +31,14 @@ export type ConfigWithChannels = {
   channels: HoneypotChannel[];
 };
 
+export type HoneypotWebhook = {
+  webhook_id: string;
+  guild_id: string;
+  channel_id: string;
+  token: string;
+  threads: string[];
+};
+
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite", {
   readonly: process.env.DATABASE_READONLY === "1" ? true : undefined,
 });
@@ -53,7 +61,7 @@ CREATE TABLE IF NOT EXISTS honeypot_config (
   guild_id BIGINT PRIMARY KEY,
   log_channel_id BIGINT,
   action TEXT NOT NULL DEFAULT 'softban',
-  experiments VARCHAR(255) DEFAULT '[]'
+  experiments VARCHAR(255) DEFAULT '[]' -- json array of strings
 );
 
 CREATE TABLE IF NOT EXISTS honeypot_channels (
@@ -116,6 +124,23 @@ CREATE INDEX IF NOT EXISTS idx_honeypot_events_stats ON honeypot_events(timestam
       }
       await tx`CREATE INDEX IF NOT EXISTS idx_honeypot_events_global_timeline ON honeypot_events(timestamp, guild_id)`;
       await tx`CREATE INDEX IF NOT EXISTS idx_honeypot_events_guild_stats ON honeypot_events(guild_id, timestamp)`;
+    }
+  },
+  {
+    version: 5,
+    name: "add honeypot_webhooks table",
+    up: async (tx) => {
+      await tx`
+CREATE TABLE IF NOT EXISTS honeypot_webhooks (
+  webhook_id BIGINT PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL, -- can be log channel, so not FK to honeypot_channels
+  token TEXT NOT NULL,
+  threads TEXT, -- comma-separated list of thread IDs
+  FOREIGN KEY (guild_id) REFERENCES honeypot_config(guild_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_honeypot_webhooks_guild_id ON honeypot_webhooks(guild_id);
+`
     }
   }
 ];
@@ -384,6 +409,65 @@ export async function setReinvite(guild_id: string, invite: string | false) {
     ON CONFLICT(guild_id) DO UPDATE SET
       invite=excluded.invite
   `;
+}
+
+function parseWebhookRow(row: any): HoneypotWebhook {
+  return {
+    webhook_id: row.webhook_id.toString(),
+    guild_id: row.guild_id.toString(),
+    channel_id: row.channel_id.toString(),
+    token: row.token,
+    threads: row.threads ? row.threads.split(",") : [],
+  };
+}
+
+export async function setWebhook(guild_id: string, channel_id: string, webhook_id: string, token: string, threads?: string[]) {
+  await db`
+    INSERT INTO honeypot_webhooks (webhook_id, guild_id, channel_id, token, threads)
+    VALUES (${webhook_id}, ${guild_id}, ${channel_id}, ${token}, ${threads?.join(",") ?? null})
+    ON CONFLICT(webhook_id) DO UPDATE SET
+      guild_id=excluded.guild_id,
+      channel_id=excluded.channel_id,
+      token=excluded.token,
+      threads=excluded.threads
+  `;
+}
+
+export async function getWebhooks(guild_id: string): Promise<HoneypotWebhook[]> {
+  const rows = await db`SELECT CAST(webhook_id AS VARCHAR(20)) AS webhook_id, CAST(guild_id AS VARCHAR(20)) AS guild_id, CAST(channel_id AS VARCHAR(20)) AS channel_id, token, threads FROM honeypot_webhooks WHERE guild_id = ${guild_id}`;
+  return rows.map(parseWebhookRow);
+}
+
+export async function getChannelWebhook(channel_id: string): Promise<HoneypotWebhook | null> {
+  const [row] = await db`SELECT CAST(webhook_id AS VARCHAR(20)) AS webhook_id, CAST(guild_id AS VARCHAR(20)) AS guild_id, CAST(channel_id AS VARCHAR(20)) AS channel_id, token, threads FROM honeypot_webhooks WHERE channel_id = ${channel_id} LIMIT 1`;
+  if (!row) return null;
+  return parseWebhookRow(row);
+}
+
+export async function deleteWebhookByChannel(guild_id: string, channel_id: string) {
+  await db`DELETE FROM honeypot_webhooks WHERE guild_id = ${guild_id} AND channel_id = ${channel_id}`;
+}
+
+export async function deleteWebhook(webhook_id: string) {
+  await db`DELETE FROM honeypot_webhooks WHERE webhook_id = ${webhook_id}`;
+}
+
+export async function setWebhookThreads(webhook_id: string, thread_ids: string[] | null) {
+  await db`UPDATE honeypot_webhooks SET threads = ${thread_ids?.join(",") ?? null} WHERE webhook_id = ${webhook_id}`;
+}
+
+export async function unsetWebhookThread(guild_id: string, thread_id: string) {
+  const rows = await db`SELECT CAST(webhook_id AS VARCHAR(20)) AS webhook_id, threads FROM honeypot_webhooks WHERE guild_id = ${guild_id} AND threads LIKE '%' || ${thread_id} || '%'`;
+  for (const row of rows) {
+    const newThreads = row.threads.split(",").filter((t: string) => t !== thread_id);
+    await db`UPDATE honeypot_webhooks SET threads = ${newThreads.length > 0 ? newThreads.join(",") : null} WHERE webhook_id = ${row.webhook_id}`;
+  }
+}
+
+// temp function
+export async function getWebhookCount() {
+  const [row] = await db`SELECT COUNT(*) as count FROM honeypot_webhooks`;
+  return Number(row.count);
 }
 
 export async function getFullStats(): Promise<{

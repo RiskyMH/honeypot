@@ -1,12 +1,12 @@
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { MessageFlags, RESTJSONErrorCodes } from "discord-api-types/v10";
+import { MessageFlags, RESTJSONErrorCodes, type RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
 import randomChannelNames from "../utils/random-channel-names.yaml";
 import { CUSTOM_EMOJI } from "../utils/constants";
 import type { Cron } from "./crons";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
-import type { HoneypotConfig } from "../utils/db";
+import type { HoneypotConfig, HoneypotWebhook } from "../utils/db";
 import { honeypotWarningMessage } from "../utils/messages";
 import { removeGuildSubscribedChannelCache, setSubscribedChannelCache } from "../utils/cache";
 
@@ -25,24 +25,22 @@ function currentShardUTC(now = new Date()): number {
     return h * 4 + q;
 }
 
-export async function channelWarmerExperiment(api: API | API2, guildId: string, channelId: string) {
-    const msg = await api.channels.createMessage(channelId, {
+export async function channelWarmerExperiment(api: API | API2, guildId: string, channelId: string, webhook?: HoneypotWebhook) {
+    const body = {
         content: `Keeping the honeypot channel active! ${CUSTOM_EMOJI}`,
         allowed_mentions: {},
         flags: MessageFlags.SuppressNotifications,
         nonce: Bun.hash(`${channelId}:channel-warmer`).toString(16),
         enforce_nonce: true,
-    });
-    try {
+    } satisfies RESTPostAPIChannelMessageJSONBody;
+
+    if (webhook) {
+        const threadId = channelId !== webhook.channel_id ? channelId : undefined;
+        const msg = await api.webhooks.execute(webhook.webhook_id, webhook.token, { thread_id: threadId, wait: true, ...body });
+        await api.webhooks.deleteMessage(webhook.webhook_id, webhook.token, msg.id, { thread_id: threadId });
+    } else {
+        const msg = await api.channels.createMessage(channelId, body);
         await api.channels.deleteMessage(channelId, msg.id);
-    } catch (err) {
-        if (err instanceof DiscordAPIError && err.code === RESTJSONErrorCodes.UnknownMessage) {
-            // message may not have replicated to all of discord's edges yet, so wait and retry once
-            await Bun.sleep(30 * 1000);
-            await api.channels.deleteMessage(channelId, msg.id);
-        } else {
-            throw err;
-        }
     }
 }
 
@@ -146,14 +144,21 @@ const cron: Cron = {
                 if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
-                for (const channel of channels) {
+                const webhooks = await db.getWebhooks(config.guild_id)
+                for (const { channel_id: channelId } of channels) {
+                    const webhook = webhooks.find(w => w.channel_id === channelId || w.threads.includes(channelId));
                     try {
                         await Bun.sleep(1_000);
-                        await channelWarmerExperiment(api, config.guild_id, channel.channel_id);
+                        await channelWarmerExperiment(api, config.guild_id, channelId, webhook);
                     } catch (err) {
                         const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
                         if (discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
-                            db.unsetHoneypotChannel(config.guild_id, channel.channel_id);
+                            db.unsetHoneypotChannel(config.guild_id, channelId);
+                            db.deleteWebhookByChannel(config.guild_id, channelId);
+                            console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
+                        } else if (discordErrorCode === RESTJSONErrorCodes.UnknownWebhook && webhook?.webhook_id) {
+                            db.deleteWebhook(webhook.webhook_id);
+                            console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                         } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
@@ -164,9 +169,9 @@ const cron: Cron = {
                         // there is no way that we can send msg in honeypot channel (as discovered above)
                         if (config.log_channel_id) {
                             await api.channels.createMessage(config.log_channel_id, {
-                                content: `⚠️ There was a problem sending a message to the <#${channel.channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+                                content: `⚠️ There was a problem sending a message to the <#${channelId}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
                                 allowed_mentions: {},
-                                nonce: Bun.hash(`${channel.channel_id}:channel-warmer-failed`).toString(16),
+                                nonce: Bun.hash(`${channelId}:channel-warmer-failed`).toString(16),
                                 enforce_nonce: true,
                             }).catch(err => {
                                 const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
@@ -193,19 +198,19 @@ const cron: Cron = {
                 if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
-                for (const channel of channels) {
+                for (const { channel_id: channelId } of channels) {
                     try {
                         await Bun.sleep(1_000);
                         await randomChannelNameExperiment(
                             api,
                             config.guild_id,
-                            channel.channel_id,
+                            channelId,
                             config.experiments.includes("random-channel-name-chaos")
                         )
                     } catch (err) {
                         const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
                         if (discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
-                            db.unsetHoneypotChannel(config.guild_id, channel.channel_id);
+                            db.unsetHoneypotChannel(config.guild_id, channelId);
                         } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Random channel name experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
@@ -216,10 +221,10 @@ const cron: Cron = {
                         // missing access means there is no way we can access that channel
                         // so if there isnt a seperate log channel, no point sending a message that will always fail
                         if ((discordErrorCode !== RESTJSONErrorCodes.MissingAccess && discordErrorCode !== RESTJSONErrorCodes.UnknownChannel) || config.log_channel_id) {
-                            await api.channels.createMessage(config.log_channel_id || channel.channel_id, {
-                                content: `⚠️ There was a problem updating the <#${channel.channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+                            await api.channels.createMessage(config.log_channel_id || channelId, {
+                                content: `⚠️ There was a problem updating the <#${channelId}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
                                 allowed_mentions: {},
-                                nonce: Bun.hash(`${channel.channel_id}:random-channel-name-failed`).toString(16),
+                                nonce: Bun.hash(`${channelId}:random-channel-name-failed`).toString(16),
                                 enforce_nonce: true,
                             }).catch(err => {
                                 const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;

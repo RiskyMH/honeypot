@@ -12,12 +12,14 @@ export interface Cron {
 import experimentCron from "./experiments";
 import oneOffCron from "./one-off";
 import ensureMsgDeleteCron from "./ensure-msg-delete";
+import generateWebhooksCron from "./generate-webhooks";
 
 export const runCrons = (api: API | API2, db: typeof import("../utils/db"), redis?: Bun.RedisClient) => {
     const crons = [
         experimentCron,
         oneOffCron,
         ensureMsgDeleteCron,
+        generateWebhooksCron,
     ];
 
     const cronJobs = [] as Bun.CronJob[];

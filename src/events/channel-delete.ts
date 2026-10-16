@@ -9,6 +9,7 @@ const handler: EventHandler<GatewayDispatchEvents.ChannelDelete> = {
         try {
             await db.unsetHoneypotChannel(guildId, channelId);
             await db.unsetLogChannel(guildId, channelId);
+            await db.deleteWebhookByChannel(guildId, channelId);
         } catch (err) {
             console.error(`Error with ChannelDelete handler: ${err}`);
         }

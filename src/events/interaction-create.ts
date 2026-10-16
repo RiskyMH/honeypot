@@ -409,11 +409,70 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }).catch(() => null);
                 }
 
+                // ensure we have the webhooks for channel warmer experiment (and soon for log channel too)
+                let webhooks = await db.getWebhooks(guildId);
+                if (newConfig.experiments.includes("channel-warmer") /*|| newConfig.log_channel_id*/) {
+                    const needWebhook = new Set<string>();
+                    for (const id of [...selectedChannelIds, /*newConfig.log_channel_id*/]) {
+                        if (!id || webhooks.find(w => w.channel_id === id || w.threads.includes(id))) continue;
+                        const channel = interaction.data.resolved?.channels?.[id];
+                        const parentId = channel && (channel.type === ChannelType.PublicThread || channel.type === ChannelType.PrivateThread) && channel.parent_id
+                            ? channel.parent_id
+                            : id;
+                        if (parentId === id) {
+                            needWebhook.add(id);
+                            continue;
+                        }
+                        const existing = webhooks.find(w => w.channel_id === parentId);
+                        if (existing) {
+                            if (!existing.threads.includes(id)) {
+                                existing.threads.push(id);
+                                await db.setWebhookThreads(existing.webhook_id, existing.threads);
+                            }
+                        } else {
+                            needWebhook.add(parentId);
+                        }
+                    }
+
+                    let avatarStr = null as string | null;
+                    for (const parentId of needWebhook) {
+                        try {
+                            let threads = Object.entries(interaction.data.resolved?.channels ?? {})
+                                .filter(([cid, ch]) => (ch.type === ChannelType.PublicThread || ch.type === ChannelType.PrivateThread) && ch.parent_id === parentId)
+                                .map(([cid]) => cid);
+                            threads = [...new Set(threads)]
+                            const existingWebhooks = await api.channels.getWebhooks(parentId);
+                            const existingWebhook = existingWebhooks.find(w => w.application_id === interaction.application_id && w.token);
+                            if (existingWebhook) {
+                                await db.setWebhook(guildId, parentId, existingWebhook.id, existingWebhook.token!, threads);
+                                webhooks.push({ guild_id: guildId, channel_id: parentId, webhook_id: existingWebhook.id, token: existingWebhook.token!, threads });
+                                continue;
+                            }
+                            if (!avatarStr) {
+                                const avatar = await fetch("https://honeypot.riskymh.dev/honeypot.png").then(r => r.arrayBuffer()).catch(() => null);
+                                avatarStr = avatar ? `data:image/png;base64,${Buffer.from(avatar).toString("base64")}` : null;
+                            }
+                            const webhook = await api.channels.createWebhook(
+                                parentId,
+                                { name: "Honeypot", avatar: avatarStr },
+                                { reason: "Webhook to send bot messages in the channel (channel warmer or log messages)" },
+                            );
+                            if (!webhook.token) throw new Error("Webhook created but no token returned");
+
+                            await db.setWebhook(guildId, parentId, webhook.id, webhook.token, threads);
+                            webhooks.push({ guild_id: guildId, channel_id: parentId, webhook_id: webhook.id, token: webhook.token, threads });
+                        } catch (err) {
+                            console.log(`Failed to create channel webhook in InteractionCreate: ${err}`);
+                        }
+                    }
+                }
+
                 // run experiments that were just enabled immediately
                 if (!prevConfig?.experiments.includes("channel-warmer") && newConfig.experiments.includes("channel-warmer")) {
                     for (const id of selectedChannelIds) {
                         try {
-                            await channelWarmerExperiment(api, guildId, id)
+                            const webhook = webhooks.find(w => w.channel_id === id || w.threads.includes(id));
+                            await channelWarmerExperiment(api, guildId, id, webhook)
                         } catch (err) {
                             api.channels.createMessage(newConfig.log_channel_id || id, {
                                 content: `There was a problem sending a message to the <#${id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
@@ -997,6 +1056,12 @@ function validateConfigPermissions(
             need(hasPermission(appPerms, PermissionFlagsBits.ManageChannels),
                 `I need the Manage Channels permission in <#${id}> (and globally) to enable the “Channel Recreate” experiment.`);
         }
+        if (config.experiments.includes("channel-warmer")) {
+            need(hasPermission(userPerms, PermissionFlagsBits.ManageWebhooks),
+                `You need the Manage Webhooks permission in <#${id}> to enable the “Channel Warmer” experiment.`);
+            need(hasPermission(appPerms, PermissionFlagsBits.ManageWebhooks),
+                `I need the Manage Webhooks permission in <#${id}> to enable the “Channel Warmer” experiment.`);
+        }
         if (config.experiments.includes("forward-message")) {
             need(hasPermission(appPerms, PermissionFlagsBits.ReadMessageHistory),
                 `I need the Read Message History permission in <#${id}> to enable the “Forward Message” experiment.`);
@@ -1009,7 +1074,7 @@ function validateConfigPermissions(
 
     if (config.log_channel_id) {
         const logCh = ch(config.log_channel_id);
-        const logPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel;
+        const logPerms = PermissionFlagsBits.SendMessages | PermissionFlagsBits.ViewChannel // | PermissionFlagsBits.ManageWebhooks;
 
         need(hasPermission(BigInt(logCh?.permissions || "0"), logPerms),
             `You don’t have enough permissions to set the log channel to <#${config.log_channel_id}>. You need the following permissions in that channel: Send Messages, View Channel.`);

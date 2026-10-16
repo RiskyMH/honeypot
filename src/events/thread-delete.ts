@@ -9,6 +9,7 @@ const handler: EventHandler<GatewayDispatchEvents.ThreadDelete> = {
         try {
             await db.unsetHoneypotChannel(guildId, channelId);
             await db.unsetLogChannel(guildId, channelId);
+            await db.unsetWebhookThread(guildId, channelId);
         } catch (err) {
             console.error(`Error with ThreadDelete handler: ${err}`);
         }
