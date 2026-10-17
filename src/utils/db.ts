@@ -464,12 +464,6 @@ export async function unsetWebhookThread(guild_id: string, thread_id: string) {
   }
 }
 
-// temp function
-export async function getWebhookCount() {
-  const [row] = await db`SELECT COUNT(*) as count FROM honeypot_webhooks`;
-  return Number(row.count);
-}
-
 export async function getFullStats(): Promise<{
   guilds: number;
   moderations: number;

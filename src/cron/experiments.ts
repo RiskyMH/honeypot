@@ -14,11 +14,11 @@ function shardId(id: string, total: number): number {
     return Number((BigInt(id) >> 22n) % BigInt(total));
 }
 
-// Cron fires at :05, :20, :35, :50 UTC — map wall-clock to most recent past slot.
+// Cron fires at :01, :16, :31, :46 UTC — map wall-clock to most recent past slot.
 function currentShardUTC(now = new Date()): number {
     const h = now.getUTCHours();
     const m = now.getUTCMinutes();
-    const schedule = [5, 20, 35, 50];
+    const schedule = [1, 16, 31, 46];
     let q = -1;
     for (let i = 0; i < schedule.length; i++) if (m >= (schedule[i] ?? 0)) q = i;
     if (q === -1) return ((h + 23) % 24) * 4 + 3; // 00:00-00:04 -> prev day's last slot
@@ -132,7 +132,7 @@ const TOTAL_SHARDS = 96;
 
 const cron: Cron = {
     name: "Experiment Runner",
-    frequency: "5,20,35,50 * * * *",
+    frequency: "1,16,31,46 * * * *",
     run: async (api, db, redis) => {
         // intentionally only run one at a time with delay to avoid rate limits (as least important feature)
         const currentShard = currentShardUTC();
