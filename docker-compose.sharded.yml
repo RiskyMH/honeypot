@@ -60,7 +60,7 @@ services:
      volumes:
         - data:/data
         - redis:/redis
-     stop_grace_period: 15m
+     stop_grace_period: 60m
      deploy:
        replicas: ${EVENTS_REPLICAS:-1}
        resources:
