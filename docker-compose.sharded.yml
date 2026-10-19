@@ -56,7 +56,7 @@ services:
        REDIS_URL: redis+unix:///redis/redis.sock
        REPLICA_ID: '{{.Task.Slot}}'
        REPLICA_COUNT: ${EVENTS_REPLICAS:-1}
-       NIRN_PROXY_URL: ${NIRN_PROXY_URL:-http://nirn-proxy:8080}
+      #  NIRN_PROXY_URL: ${NIRN_PROXY_URL:-http://nirn-proxy:8080}
      volumes:
         - data:/data
         - redis:/redis
@@ -122,31 +122,31 @@ services:
        restart_policy:
          condition: any
 
-   nirn-proxy:
-    image: ${NIRN_IMAGE:-ghcr.io/davfsa/nirn-proxy:v0.0.32e}
-    restart: unless-stopped
-    init: true
-    ports:
-        - "${NIRN_METRICS_PORT:-9000}:9000"
-    environment:
-      PORT: 8080
-      METRICS_PORT: 9000
-      LOG_LEVEL: ${NIRN_LOG_LEVEL:-error}
-      REQUEST_TIMEOUT: ${NIRN_REQUEST_TIMEOUT:-5000}
-      BOT_RATELIMIT_OVERRIDES: ${BOT_RATELIMIT_OVERRIDES:-}
-      BUFFER_SIZE: ${NIRN_BUFFER_SIZE:-100}
-      # DISABLE_HTTP_2: "false"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 32M
-      update_config:
-        order: stop-first
-        failure_action: rollback
-      restart_policy:
-        condition: any
+  #  nirn-proxy:
+  #   image: ${NIRN_IMAGE:-ghcr.io/davfsa/nirn-proxy:v0.0.32e}
+  #   restart: unless-stopped
+  #   init: true
+  #   ports:
+  #       - "${NIRN_METRICS_PORT:-9000}:9000"
+  #   environment:
+  #     PORT: 8080
+  #     METRICS_PORT: 9000
+  #     LOG_LEVEL: ${NIRN_LOG_LEVEL:-error}
+  #     REQUEST_TIMEOUT: ${NIRN_REQUEST_TIMEOUT:-5000}
+  #     BOT_RATELIMIT_OVERRIDES: ${BOT_RATELIMIT_OVERRIDES:-}
+  #     BUFFER_SIZE: ${NIRN_BUFFER_SIZE:-100}
+  #     # DISABLE_HTTP_2: "false"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #       reservations:
+  #         memory: 32M
+  #     update_config:
+  #       order: stop-first
+  #       failure_action: rollback
+  #     restart_policy:
+  #       condition: any
 
    redis:
     image: redis:8.6.2-alpine3.23

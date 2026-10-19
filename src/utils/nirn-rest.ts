@@ -130,6 +130,7 @@ export function createRest(token: string, options: NirnRestOptions = {}): REST {
     const { proxyUrl, ...restOptions } = options;
     const resolved = proxyUrl ?? process.env.NIRN_PROXY_URL ?? null;
     if (resolved) return new NirnRest(token, resolved, restOptions);
+    console.warn("NIRN_PROXY_URL not set, using direct Discord API access (no proxy).");
     return new REST(restOptions).setToken(token);
 }
 
