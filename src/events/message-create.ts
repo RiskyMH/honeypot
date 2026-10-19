@@ -7,7 +7,7 @@ import { CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
-import { getDiscordDate } from "../utils/tools";
+import { getDiscordDate, reduceMapSize } from "../utils/tools";
 import type { HoneypotConfig, HoneypotChannel } from "../utils/db";
 
 
@@ -489,6 +489,9 @@ async function logMessage(
     }
 }
 
+const warningMsgUpdates = new Map<string, { at: number; controller: AbortController }>();
+const WARNING_MSG_INTERVAL_MS = 10_000;
+
 async function updateWarning(
     api: API | API2,
     db: typeof import("../utils/db"),
@@ -499,15 +502,29 @@ async function updateWarning(
     guildId: string,
 ) {
     if (!matchedChannel.msg_id || config.experiments.includes("no-warning-msg")) return;
+    const prev = warningMsgUpdates.get(matchedChannel.channel_id);
+    prev?.controller.abort();
+    const entry = { at: prev?.at ?? 0, controller: new AbortController() };
+    warningMsgUpdates.set(matchedChannel.channel_id, entry);
+    reduceMapSize(warningMsgUpdates, 500);
+
+    const waitMs = prev ? WARNING_MSG_INTERVAL_MS - (Date.now() - prev.at) : 0;
+    if (waitMs > 0) await Bun.sleep(waitMs);
+    if (entry.controller.signal.aborted) return;
+    entry.at = Date.now();
+
     try {
         await api.channels.editMessage(
             matchedChannel.channel_id,
             matchedChannel.msg_id,
-            honeypotWarningMessage(moderatedCount, config.action, customMessage)
+            honeypotWarningMessage(moderatedCount, config.action, customMessage),
+            { signal: entry.controller.signal },
         );
     } catch (err) {
         const discordError = err instanceof DiscordAPIError ? err : null;
-        if (discordError && discordError.code == RESTJSONErrorCodes.UnknownMessage) {
+        if ((err as Error)?.name === "AbortError") {
+            console.log(styleText("dim", `Skipped honeypot message update, superseded by a newer one: ${err}`));
+        } else if (discordError && discordError.code == RESTJSONErrorCodes.UnknownMessage) {
             console.log(styleText("dim", `Failed to update honeypot message (after banning): ${err}`));
             await db.unsetHoneypotMsg(guildId, matchedChannel.msg_id!);
         } else if (discordError && (discordError.code == RESTJSONErrorCodes.MissingPermissions || discordError.code == RESTJSONErrorCodes.MissingAccess)) {

@@ -37,3 +37,13 @@ export function base64ToSlowflake(base64: string): bigint {
 }
 
 export const trim = (str: string, max: number) => str.length > max ? str.slice(0, max - 1) + "…" : str;
+
+export function reduceMapSize<K, V>(map: Map<K, V>, maxSize: number) {
+    if (map.size <= maxSize) return;
+    const keys = map.keys();
+    const amountToDelete = map.size - maxSize;
+
+    for (let i = 0; i < amountToDelete; i++) {
+        map.delete(keys.next().value!);
+    }
+}
