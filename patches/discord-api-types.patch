@@ -103,8 +103,8 @@ diff --git a/package.json b/package.json
  			"require": "./utils/v*.js",
 -			"import": "./utils/v*.mjs"
 +			"import": "./utils/v*.ts"
-  		}
- 	}
+ 		}
+ 	},
 @@ -124,3 +124,4 @@
  	"author": "Vlad Frangu <me@vladfrangu.dev>",
  	"license": "MIT",
