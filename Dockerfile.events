@@ -23,6 +23,6 @@ COPY --from=builder /app/dist/event-handler ./event-handler
 # USER botuser
 
 ENV NODE_ENV=production
-ENV BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP3_CLIENT=1
+# ENV BUN_FEATURE_FLAG_EXPERIMENTAL_HTTP3_CLIENT=1
 
 CMD ["./event-handler", "--title=Honeypot-Events"]
