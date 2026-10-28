@@ -1,6 +1,9 @@
 # Build stage
 FROM oven/bun:alpine AS builder
 
+# temp for bun aot
+RUN bun upgrade --canary
+
 WORKDIR /app
 
 COPY package.json bun.lock ./
