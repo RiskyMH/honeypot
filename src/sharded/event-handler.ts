@@ -34,7 +34,7 @@ process.on('SIGTERM', () => {
 const getRedis = (c?: Bun.RedisOptions) => new Bun.RedisClient(process.env.REDIS_URL!, c);
 const redis = getRedis();
 // separate connection for blocking so it doesnt interfere with the main one
-const redisBlocking = getRedis({ connectionTimeout: 1000, maxRetries: 1 });
+const redisBlocking = getRedis();
 const redisPubSub = getRedis();
 
 const rest = createRest(token, {
