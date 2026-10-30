@@ -7,7 +7,7 @@ This refers to the current production instance available through the [official i
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it to me (RiskyMH) at <security@riskymh.dev> or private message on [Discord](https://discord.gg/haFKuBssU7).
+If you discover a security vulnerability, please report it to me (RiskyMH) at <security@riskymh.dev> or private message on [Discord](https://discord.gg/hZAZAkwE6M).
 
 Reports are typically acknowledged within 3 days.
 
