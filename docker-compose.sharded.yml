@@ -135,8 +135,8 @@ services:
       REQUEST_TIMEOUT: ${NIRN_REQUEST_TIMEOUT:-5000}
       BOT_RATELIMIT_OVERRIDES: ${BOT_RATELIMIT_OVERRIDES:-}
       BUFFER_SIZE: ${NIRN_BUFFER_SIZE:-100}
-      ALLOW_CONCURRENT_REQUESTS: ${NIRN_ALLOW_CONCURRENT_REQUESTS:-"true"}
-      DISABLE_HTTP_2: ${NIRN_DISABLE_HTTP_2:-"true"} # "false" to enable it
+      ALLOW_CONCURRENT_REQUESTS: ${NIRN_ALLOW_CONCURRENT_REQUESTS:-true}
+      DISABLE_HTTP_2: ${NIRN_DISABLE_HTTP_2:-true} # "false" to enable it
     deploy:
       resources:
         limits:
