@@ -100,7 +100,9 @@ export class NirnRest extends REST {
             if (
                 (res.status === 429 || (res.status >= 500 && res.status < 600) || res.status === 408) &&
                 attempt < this.options.retries &&
-                request.signal?.aborted !== true
+                request.signal?.aborted !== true &&
+                // if POST /webhooks/<id>/<token> errord and we have enforce_nonce in body, then dont retry.
+                !(request.method === "POST" && request.fullRoute.startsWith("/webhooks/") && request.body && typeof request.body === "object" && "enforce_nonce" in request.body)
             ) {
                 const backoff = normalizeBackoff(this.options.retryBackoff, request.fullRoute, res.status, attempt, request.body);
                 if (backoff !== null) {

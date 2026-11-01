@@ -36,10 +36,16 @@ export async function channelWarmerExperiment(api: API | API2, guildId: string, 
 
     if (webhook) {
         const threadId = channelId !== webhook.channel_id ? channelId : undefined;
-        const msg = await api.webhooks.execute(webhook.webhook_id, webhook.token, { thread_id: threadId, wait: true, ...body });
+        const msg = await api.webhooks.execute(webhook.webhook_id, webhook.token,
+            { thread_id: threadId, wait: true, ...body },
+            { signal: AbortSignal.timeout(10_000) }
+        );
         await api.webhooks.deleteMessage(webhook.webhook_id, webhook.token, msg.id, { thread_id: threadId });
     } else {
-        const msg = await api.channels.createMessage(channelId, body);
+        const msg = await api.channels.createMessage(channelId,
+            body,
+            { signal: AbortSignal.timeout(5_000) }
+        );
         await api.channels.deleteMessage(channelId, msg.id);
     }
 }
