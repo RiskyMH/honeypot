@@ -168,7 +168,7 @@ const cron: Cron = {
                         } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
-                        } else if (discordErrorCode?.toString() === "TimeoutError: The operation timed out.") {
+                        } else if (`${err}` === "TimeoutError: The operation timed out.") {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                         } else {
                             console.log(`Channel warmer experiment execution failed: ${err}`);

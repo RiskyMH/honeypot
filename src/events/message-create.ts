@@ -112,12 +112,9 @@ const onMessage = async (
 
         await Promise.race([preActionPromise, Promise.all([dmMessage, timeoutPromise, forwardPromise].filter(p => !!p))]);
 
-        let failed: false | "permissions" | "admin" | "unban" | true = false;
-        if (!permissionSkip) {
-            failed = await executeAction(api, guildId, userId, config, preActionAbort);
-        } else {
-            failed = "admin";
-        }
+        const failed = permissionSkip
+            ? "admin" as const
+            : await executeAction(api, guildId, userId, config, preActionAbort);
 
         if (!failed && !permissionSkip) {
             await db.logModerateEvent(guildId, userId, matchedChannel.channel_id);
@@ -339,6 +336,11 @@ function maybeTimeoutMember(api: API | API2, guildId: string, userId: string, co
     ).then(() => Bun.sleep(50))
         .catch(err => {
             if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                console.log(styleText("dim", `Failed to timeout user before ${config.action}: ${err}`));
+            } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMember)) {
+                // user was already banned/kicked, so ignore
+                console.log(styleText("dim", `Failed to timeout user before ${config.action}: ${err}`));
+            } else if (`${err}` === "AbortError: The operation was aborted." || `${err}` === "Error: Request aborted manually") {
                 console.log(styleText("dim", `Failed to timeout user before ${config.action}: ${err}`));
             } else {
                 console.log(`Failed to timeout user before ${config.action}: ${err}`);
