@@ -123,7 +123,7 @@ services:
          condition: any
 
    nirn-proxy:
-    image: ${NIRN_IMAGE:-ghcr.io/davfsa/nirn-proxy:v0.0.32e}
+    image: ${NIRN_IMAGE:-ghcr.io/germanoeich/nirn-proxy:main}
     restart: unless-stopped
     init: true
     ports:
@@ -135,17 +135,19 @@ services:
       REQUEST_TIMEOUT: ${NIRN_REQUEST_TIMEOUT:-5000}
       BOT_RATELIMIT_OVERRIDES: ${BOT_RATELIMIT_OVERRIDES:-}
       BUFFER_SIZE: ${NIRN_BUFFER_SIZE:-100}
-      ALLOW_CONCURRENT_REQUESTS: ${NIRN_ALLOW_CONCURRENT_REQUESTS:-true}
+      # ALLOW_CONCURRENT_REQUESTS: ${NIRN_ALLOW_CONCURRENT_REQUESTS:-true}
       DISABLE_HTTP_2: ${NIRN_DISABLE_HTTP_2:-true} # "false" to enable it
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
         reservations:
           memory: 32M
       update_config:
-        order: stop-first
+        order: start-first
         failure_action: rollback
+        max_failure_ratio: 0
+        monitor: 5s
       restart_policy:
         condition: any
 
