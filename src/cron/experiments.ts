@@ -148,6 +148,13 @@ async function channelRecreateExperiment(api: API | API2, guildId: string, chann
     return { channel: newChannel.id, message: msgId };
 }
 
+const randomSort = <T>(arr: T[]): T[] => {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+    }
+    return arr;
+}
 
 const TOTAL_SHARDS = 96;
 
@@ -161,7 +168,7 @@ const cron: Cron = {
         // channel warmer experiment - send a msg and instantly delete it to keep channel active
         const channelWarmer = async () => {
             const guilds = await db.getGuildsWithExperiment("channel-warmer");
-            for (const config of guilds) {
+            for (const config of randomSort(guilds)) {
                 if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
@@ -223,7 +230,7 @@ const cron: Cron = {
         // random channel name experiment - change the honeypot channel name to a random name
         const randomChannelName = async () => {
             const guilds = await db.getGuildsWithExperiment("random-channel-name");
-            for (const config of guilds) {
+            for (const config of randomSort(guilds)) {
                 if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
@@ -276,7 +283,7 @@ const cron: Cron = {
         // channel recreate experiment - get current config (name, description, overides, etc) and make a new channel the same and then delete old (also move the events with that channel over to the new ID)
         const channelRecreate = async () => {
             const guilds = await db.getGuildsWithExperiment("recreate-channel");
-            for (const config of guilds) {
+            for (const config of randomSort(guilds)) {
                 if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 const channels = await db.getChannels(config.guild_id);
                 const existingMessages = await db.getHoneypotMessages(config.guild_id);
