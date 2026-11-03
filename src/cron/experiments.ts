@@ -196,7 +196,7 @@ const cron: Cron = {
                         }
 
                         // there is no way that we can send msg in honeypot channel (as discovered above)
-                        if (config.log_channel_id) {
+                        if (config.log_channel_id && (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions)) {
                             await api.channels.createMessage(config.log_channel_id, {
                                 content: `⚠️ There was a problem sending a message to the <#${channelId}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
                                 allowed_mentions: {},
