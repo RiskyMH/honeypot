@@ -50,6 +50,21 @@ export async function channelWarmerExperiment(api: API | API2, guildId: string, 
     }
 }
 
+export async function deleteChannelWarmerMessages(api: API | API2, channelId: string, webhook?: HoneypotWebhook): Promise<number> {
+    const messages = await api.channels.getMessages(channelId, { limit: 100 });
+    const messagesToDelete = messages.filter(m => m.author.bot && m.content?.includes("Keeping the honeypot channel active!"));
+
+    const promises = await Promise.allSettled(messagesToDelete.map(m => {
+        if (webhook && m.webhook_id === webhook.webhook_id) {
+            return api.webhooks.deleteMessage(webhook.webhook_id, webhook.token, m.id)
+        } else {
+            return api.channels.deleteMessage(channelId, m.id)
+        }
+    }));
+
+    return promises.filter(p => p.status === "fulfilled").length;
+}
+
 export async function randomChannelNameExperiment(api: API | API2, guildId: string, channelId: string, isChaos = false) {
     let newName = "honeypot";
     if (isChaos) {
@@ -169,6 +184,12 @@ const cron: Cron = {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
                         } else if (`${err}` === "TimeoutError: The operation timed out.") {
+                            console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
+                        } else if (`${err}` === "HTTPError: Gateway Timeout") {
+                            // could be a transient error that somehow kept the message present, so really ensure it isn't anymore
+                            deleteChannelWarmerMessages(api, channelId, webhook).then(deletedCount => {
+                                if (deletedCount > 0) console.log(`Channel warmer experiment execution manually deleted ${deletedCount} messages`);
+                            });
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                         } else {
                             console.log(`Channel warmer experiment execution failed: ${err}`);
