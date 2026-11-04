@@ -79,7 +79,7 @@ export class NirnRest extends REST {
         for (;;) {
             let res: ResponseLike;
             try {
-                res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal } as never);
+                res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal, timeout: false } as never);
             } catch (error) {
                 // network failure / abort: retry per `retries` + `retryBackoff` (`statusCode: null`)
                 if (attempt < this.options.retries && request.signal?.aborted !== true) {
