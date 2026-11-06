@@ -177,7 +177,7 @@ services:
         max_failure_ratio: 0
         monitor: 1s
       restart_policy:
-        condition: none
+        condition: any
 
 
 volumes:
