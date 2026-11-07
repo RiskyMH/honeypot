@@ -153,11 +153,11 @@ async function postWarning(api: API | API2, channelId: string, applicationId: st
         }
         try {
             await api.channels.editMessage(channelId, first.id, honeypotWarningMessage(moderatedCount, action));
-            await Promise.allSettled(rest.map(msg => api.channels.deleteMessage(channelId, msg.id, { reason: "Removing duplicate honeypot messages" })));
+            await Promise.allSettled(rest.map(msg => api.channels.deleteMessage(channelId, msg.id)));
             return first.id;
         } catch {
             const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
-            await Promise.allSettled(botMessages.map(msg => api.channels.deleteMessage(channelId, msg.id, { reason: "Removing duplicate honeypot messages" })));
+            await Promise.allSettled(botMessages.map(msg => api.channels.deleteMessage(channelId, msg.id)));
             return msg.id;
         }
     } else {
@@ -217,7 +217,7 @@ async function sendIntroMessage(api: API | API2, redis: Bun.RedisClient | undefi
     });
     if (redis) await addToDeleteMessageCache(channelId, msgId, redis);
     setTimeout(async () => {
-        await api.channels.deleteMessage(channelId, msgId, { reason: "Cleaning up welcome message" }).catch(() => { });
+        await api.channels.deleteMessage(channelId, msgId).catch(() => { });
         if (redis) await removeFromDeleteMessageCache(channelId, msgId, redis);
     }, removalTime);
     return msgId;

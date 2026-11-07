@@ -12,7 +12,7 @@ const cron: Cron = {
             await Bun.sleep(2 * 60 * 1000); // 2m
             for (const msg of messagesToDelete) {
                 if (!msg.channelId || !msg.messageId) continue;
-                await api.channels.deleteMessage(msg.channelId, msg.messageId, { reason: "Removing one-off message" }).catch(() => { });
+                await api.channels.deleteMessage(msg.channelId, msg.messageId).catch(() => { });
                 await removeFromDeleteMessageCache(msg.channelId, msg.messageId, redis);
                 await Bun.sleep(500);
             }

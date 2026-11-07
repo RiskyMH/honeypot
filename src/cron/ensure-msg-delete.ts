@@ -128,7 +128,7 @@ const cron: Cron = {
                             const toDelete = msgIds.slice(j, j + BULK_DELETE_MAX);
                             try {
                                 if (toDelete.length === 1) {
-                                    await api.channels.deleteMessage(channelId, toDelete[0]!, { reason: "Ensure message delete experiment" });
+                                    await api.channels.deleteMessage(channelId, toDelete[0]!);
                                 } else {
                                     await api.channels.bulkDeleteMessages(channelId, toDelete, { reason: "Ensure message delete experiment" });
                                 }

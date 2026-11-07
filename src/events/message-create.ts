@@ -278,19 +278,16 @@ function emojiReactAcknowledgement(api: API | API2, channelId: string, messageId
 }
 
 function deleteTriggeringMessage(api: API | API2, channelId: string, messageId: string) {
-    return api.channels.deleteMessage(
-        channelId,
-        messageId,
-        { reason: "Triggered honeypot" }
-    ).catch((err) => {
-        if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage)) {
-            console.log(styleText("dim", `Triggering message already deleted: ${err}`));
-        } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
-            console.log(styleText("dim", `Failed to delete triggering message, likely due to missing permissions: ${err}`));
-        } else {
-            console.log(`Failed to delete triggering message: ${err}`);
-        }
-    });
+    return api.channels.deleteMessage(channelId, messageId)
+        .catch((err) => {
+            if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.UnknownMessage)) {
+                console.log(styleText("dim", `Triggering message already deleted: ${err}`));
+            } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.MissingAccess || err.code === RESTJSONErrorCodes.MissingPermissions)) {
+                console.log(styleText("dim", `Failed to delete triggering message, likely due to missing permissions: ${err}`));
+            } else {
+                console.log(`Failed to delete triggering message: ${err}`);
+            }
+        });
 }
 
 const forwardableMsgTypes = new Set([MessageType.Default, MessageType.Reply, MessageType.ChatInputCommand, MessageType.ContextMenuCommand]);

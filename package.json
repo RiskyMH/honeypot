@@ -22,22 +22,22 @@
     "docker:logs:ws": "docker service logs -tf honeypot_discord-ws"
   },
   "devDependencies": {
-    "@types/bun": "npm:bun-types@^1.4.2",
+    "@types/bun": "npm:bun-types@^1.4.4",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@discordjs/core": "3.0.0-dev.1790856158-4dc1acc60",
-    "@discordjs/rest": "3.0.0-dev.1790856158-4dc1acc60",
-    "@discordjs/ws": "3.0.0-dev.1790856158-4dc1acc60",
-    "discord-api-types": "^0.38.56"
+    "@discordjs/core": "3.0.0-dev.1793836959-ddbba3adb",
+    "@discordjs/rest": "3.0.0-dev.1793836959-ddbba3adb",
+    "@discordjs/ws": "3.0.0-dev.1793836959-ddbba3adb",
+    "discord-api-types": "^0.38.57"
   },
   "overrides": {
     "@vladfrangu/async_event_emitter": "https://github.com/vladfrangu/async_event_emitter#877001a",
-    "discord-api-types": "https://github.com/discordjs/discord-api-types#865af57"
+    "discord-api-types": "https://github.com/discordjs/discord-api-types#00cbe03"
   },
   "patchedDependencies": {
     "@vladfrangu/async_event_emitter@github:vladfrangu/async_event_emitter#877001a": "patches/@vladfrangu+async_event_emitter.patch",
-    "discord-api-types@github:discordjs/discord-api-types#865af57": "patches/discord-api-types.patch"
+    "discord-api-types@github:discordjs/discord-api-types#00cbe03": "patches/discord-api-types.patch"
   },
   "trustedDependencies": []
 }

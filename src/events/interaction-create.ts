@@ -262,7 +262,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                             for (const [cid, mid] of msgIds) {
                                 // only delete the message if it was created in this setup attempt (ie keep valid ones)
                                 if (prevChannels.find(c => c.channel_id === cid)?.msg_id === mid) continue;
-                                if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after setup failure" }).catch(() => null);
+                                if (mid) api.channels.deleteMessage(cid, mid).catch(() => null);
                             }
                             return;
                         }
@@ -287,7 +287,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     } catch (err) {
                         // clean up just created honeypot message if log channel fails (because user might think it's fully set up otherwise)
                         for (const [cid, mid] of msgIds) {
-                            if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after log channel setup failure" }).catch(() => null);
+                            if (mid) api.channels.deleteMessage(cid, mid).catch(() => null);
                         }
 
                         if (err instanceof DiscordAPIError && (err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions)) {
@@ -324,7 +324,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         inviteCode = invite.code;
                     } catch (err) {
                         for (const [cid, mid] of msgIds) {
-                            if (mid) api.channels.deleteMessage(cid, mid, { reason: "Cleaning up honeypot messages after reinvite experiment failure" }).catch(() => null);
+                            if (mid) api.channels.deleteMessage(cid, mid).catch(() => null);
                         }
 
                         const errorCode = err instanceof DiscordAPIError ? err.code : null;
@@ -396,7 +396,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 // clean up old warning messages from channels that were removed
                 for (const ch of removedChannels) {
                     if (ch.msg_id) {
-                        api.channels.deleteMessage(ch.channel_id, ch.msg_id, { reason: "Honeypot channel changed, so cleaning up old honeypot message" }).catch(() => null);
+                        api.channels.deleteMessage(ch.channel_id, ch.msg_id).catch(() => null);
                     }
                 }
 
