@@ -25,7 +25,7 @@ services:
       #  replicas: ${WS_REPLICAS:-1}
        resources:
          limits:
-           memory: 512M
+           memory: 1G
          reservations:
            memory: 25M
        update_config:
@@ -109,7 +109,7 @@ services:
        replicas: ${STATS_REPLICAS:-1}
        resources:
          limits:
-           memory: 128M
+           memory: 256M
            cpus: "0.5"
          reservations:
            memory: 10M
