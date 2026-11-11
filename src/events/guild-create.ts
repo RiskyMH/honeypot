@@ -18,7 +18,12 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
         if (guild.unavailable) return;
 
         try {
-            setGuildInfoCache(guild.id, guild, redis);
+            // only cache substantial guilds (over 1k members) to save memory
+            // it'll fetch (and cache) the guild info manually when a ban is invoked anyway
+            // but if not using redis, then cache all as they prob are selfhosting
+            if (!redis || (guild.member_count > 1000)) {
+                setGuildInfoCache(guild.id, guild, redis);
+            }
 
             // if we already have config for this server, don't try to recreate (every bot restart creates this event) 
             const config = await db.getConfig(guild.id);
