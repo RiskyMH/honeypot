@@ -36,6 +36,10 @@ services:
          monitor: 5s
        restart_policy:
          condition: any
+     ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
    discord-events:
      image: ghcr.io/riskymh/honeypot-events:latest
@@ -57,6 +61,7 @@ services:
        REPLICA_ID: '{{.Task.Slot}}'
        REPLICA_COUNT: ${EVENTS_REPLICAS:-1}
        NIRN_PROXY_URL: ${NIRN_PROXY_URL:-http://nirn-proxy:8080}
+       BUN_CONFIG_MAX_HTTP_REQUESTS: 4096
      volumes:
         - data:/data
         - redis:/redis
@@ -75,6 +80,10 @@ services:
          monitor: 5s
        restart_policy:
          condition: any
+     ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
    stats-api:
      image: ghcr.io/riskymh/honeypot-stats:latest
@@ -150,6 +159,10 @@ services:
         monitor: 5s
       restart_policy:
         condition: any
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
    redis:
     image: redis:8.10.3-alpine3.23
