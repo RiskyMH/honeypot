@@ -38,13 +38,13 @@ export async function channelWarmerExperiment(api: API | API2, guildId: string, 
         const threadId = channelId !== webhook.channel_id ? channelId : undefined;
         const msg = await api.webhooks.execute(webhook.webhook_id, webhook.token,
             { thread_id: threadId, wait: true, ...body },
-            { signal: AbortSignal.timeout(60_000) }
+            // { signal: AbortSignal.timeout(60_000) }
         );
         await api.webhooks.deleteMessage(webhook.webhook_id, webhook.token, msg.id, { thread_id: threadId });
     } else {
         const msg = await api.channels.createMessage(channelId,
             body,
-            { signal: AbortSignal.timeout(10_000) }
+            // { signal: AbortSignal.timeout(10_000) }
         );
         await api.channels.deleteMessage(channelId, msg.id);
     }
@@ -193,14 +193,15 @@ const cron: Cron = {
                         } else if (`${err}` === "TimeoutError: The operation timed out.") {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                         } else if (`${err}` === "HTTPError: Gateway Timeout") {
-                            // could be a transient error that somehow kept the message present, so really ensure it isn't anymore
-                            deleteChannelWarmerMessages(api, channelId, webhook).then(deletedCount => {
-                                if (deletedCount > 0) console.log(`Channel warmer experiment execution manually deleted ${deletedCount} messages`);
-                            });
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                         } else {
                             console.log(`Channel warmer experiment execution failed: ${err}`);
                         }
+
+                        // could be a transient error that somehow kept the message present, so really ensure it isn't anymore
+                        deleteChannelWarmerMessages(api, channelId, webhook).then(deletedCount => {
+                            if (deletedCount > 0) console.log(`Channel warmer experiment execution manually deleted ${deletedCount} messages`);
+                        });
 
                         // there is no way that we can send msg in honeypot channel (as discovered above)
                         if (config.log_channel_id && (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions)) {
