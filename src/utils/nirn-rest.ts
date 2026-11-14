@@ -8,6 +8,7 @@ import {
     type ResponseLike,
     type RESTOptions,
     type RouteLike,
+    type RouteData,
 } from "@discordjs/rest";
 
 /**
@@ -76,11 +77,16 @@ export class NirnRest extends REST {
         const method = (fetchOptions as { method?: string }).method ?? request.method;
 
         let attempt = 0;
-        for (;;) {
+        for (; ;) {
             let res: ResponseLike;
             try {
                 res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal, timeout: false } as never);
             } catch (error) {
+                if (request.signal?.aborted !== true) {
+                    const route = (REST as any).generateRouteData(request.fullRoute, request.method) as RouteData;
+                    console.log(`Error making request ${route.bucketRoute}: ${error}`);
+                }
+
                 // network failure / abort: retry per `retries` + `retryBackoff` (`statusCode: null`)
                 if (attempt < this.options.retries && request.signal?.aborted !== true) {
                     const backoff = normalizeBackoff(this.options.retryBackoff, request.fullRoute, null, attempt, request.body);

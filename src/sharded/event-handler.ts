@@ -42,7 +42,7 @@ const rest = createRest(token, {
         ["/channels/:id/messages/:id/reactions"].includes(rateLimitData.route),
     retries: 10,
     retryBackoff: (route, statusCode, retryCount) =>
-        statusCode === null ? 0 : 500 * 2 ** retryCount,
+        statusCode === null ? 15 : 500 * 2 ** retryCount,
 });
 const api = new API(rest);
 
