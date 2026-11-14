@@ -7,7 +7,7 @@ import { CUSTOM_EMOJI_ID, HAS_MESSAGE_INTENT } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
-import { getDiscordDate, reduceMapSize } from "../utils/tools";
+import { getDiscordDate, reduceMapSize, reduceSetSize } from "../utils/tools";
 import type { HoneypotConfig, HoneypotChannel } from "../utils/db";
 
 
@@ -406,7 +406,7 @@ async function maybeDmMember(
     return null;
 }
 
-
+export const errorfulChannels = new Set<string>();
 async function logMessage(
     api: API | API2,
     db: typeof import("../utils/db"),
@@ -424,6 +424,10 @@ async function logMessage(
 ) {
     if (!config.log_channel_id && !permissionSkip && !failed) return;
     const nonce = Bun.hash(`${messageId || Date.now()}:log`).toString(16);
+    if (errorfulChannels.has(config.log_channel_id || matchedChannel.channel_id)) {
+        console.log(styleText("dim", "Skipping log message as it has previously errored"));
+        return;
+    }
 
     try {
         if (config.log_channel_id && !failed && !permissionSkip) {
@@ -483,6 +487,10 @@ async function logMessage(
                 console.log(styleText("dim", `Failed to send log message (MessageCreate handler): ${err}`));
             } else {
                 console.log(`Failed to send log message (MessageCreate handler): ${err}`);
+            }
+
+            if (err.code == RESTJSONErrorCodes.UnknownChannel || err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions) {
+                reduceSetSize(errorfulChannels, 50);
             }
         } else console.log(`Failed to send log message (MessageCreate handler): ${err}`);
     }

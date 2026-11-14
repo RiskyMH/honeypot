@@ -10,6 +10,7 @@ import { DiscordAPIError } from "@discordjs/rest";
 import { styleText } from "node:util";
 import { getDiscordDate, hasPermission, trim } from "../utils/tools";
 import type { CreateInteractionResponseOptions } from "@discordjs/core";
+import { errorfulChannels } from "./message-create";
 
 const badWords = getBadWords() as any as Awaited<ReturnType<typeof getBadWords>>;
 const containsBadWord = (text: string): string | null => {
@@ -392,6 +393,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     allowed_mentions: {},
                 });
                 if (redis) setSubscribedChannelCache(guildId, allChannels.map(c => c.channel_id), redis);
+                for (const id of selectedChannelIds) errorfulChannels.delete(id);
 
                 // clean up old warning messages from channels that were removed
                 for (const ch of removedChannels) {

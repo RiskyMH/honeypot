@@ -47,3 +47,13 @@ export function reduceMapSize<K, V>(map: Map<K, V>, maxSize: number) {
         map.delete(keys.next().value!);
     }
 }
+
+export function reduceSetSize<T>(set: Set<T>, maxSize: number) {
+    if (set.size <= maxSize) return;
+    const values = set.values();
+    const amountToDelete = set.size - maxSize;
+
+    for (let i = 0; i < amountToDelete; i++) {
+        set.delete(values.next().value!);
+    }
+}
