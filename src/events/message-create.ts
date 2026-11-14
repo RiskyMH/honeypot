@@ -294,6 +294,11 @@ const forwardableMsgTypes = new Set([MessageType.Default, MessageType.Reply, Mes
 async function maybeForwardMessage(api: API | API2, guildId: string, channelId: string, messageId: string | undefined, msgType: MessageType | undefined, config: HoneypotConfig, preActionAbort: AbortSignal) {
     if (!HAS_MESSAGE_INTENT || !config.experiments.includes("forward-message") || !config.log_channel_id || !messageId || msgType === undefined) return null;
     if (!forwardableMsgTypes.has(msgType)) return null;
+    if (errorfulChannels.has(config.log_channel_id)) {
+        console.log(styleText("dim", "Skipping forwarding message to log channel as it has previously errored"));
+        return;
+    }
+
     return api.channels.createMessage(config.log_channel_id, {
         message_reference: {
             type: MessageReferenceType.Forward,
@@ -490,6 +495,7 @@ async function logMessage(
             }
 
             if (err.code == RESTJSONErrorCodes.UnknownChannel || err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions) {
+                errorfulChannels.add(config.log_channel_id || matchedChannel.channel_id);
                 reduceSetSize(errorfulChannels, 50);
             }
         } else console.log(`Failed to send log message (MessageCreate handler): ${err}`);
