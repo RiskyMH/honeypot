@@ -80,7 +80,7 @@ export class NirnRest extends REST {
         for (; ;) {
             let res: ResponseLike;
             try {
-                res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal, timeout: false } as never);
+                res = await this.options.makeRequest(url, { ...(fetchOptions as object), signal: request.signal, timeout: 30 * 60 * 1000 /* 30min */ } as never);
             } catch (error) {
                 if (request.signal?.aborted !== true) {
                     const route = (REST as any).generateRouteData(request.fullRoute, request.method) as RouteData;
