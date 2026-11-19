@@ -2,6 +2,7 @@ import { WebSocketManager, WebSocketShardEvents, CompressionMethod, type Session
 import { REST } from '@discordjs/rest';
 import { GatewayDispatchEvents, GatewayIntentBits, Routes, type GatewayDispatchPayload, type RESTGetAPIGatewayBotResult } from 'discord-api-types/v10';
 import initialPresence from '../utils/initial-presence';
+import { styleText } from "node:util";
 
 if (!process.env.DISCORD_TOKEN) throw new Error("DISCORD_TOKEN environment variable not set.");
 if (!process.env.REDIS_URL) throw new Error("REDIS_URL environment variable not set.");
@@ -85,6 +86,20 @@ const onExit = async (type: string) => {
 process.on('SIGTERM', onExit.bind(null, "SIGTERM"));
 process.on('SIGINT', onExit.bind(null, "SIGINT"));
 
+// every 10 minutes log the amount of events we received in that timeframe, and reset the count
+const events = new Map<string, number>();
+let broadcastEventCount = 0;
+setInterval(() => {
+    const sorted = [...events.entries()]
+        .filter(([, count]) => count > 0)
+        .sort((a, b) => b[1] - a[1]);
+    const total = sorted.reduce((sum, [, count]) => sum + count, 0);
+    const summary = sorted.map(([event, count]) => `${event}: ${count}`).join(", ");
+    console.log(`[Events] ${total}${styleText("dim", ` | ${summary || "none"} | Broadcasted ${broadcastEventCount}`)}`);
+    events.clear();
+    broadcastEventCount = 0;
+}, 600_000);
+
 const dispatchEvent = async (id: number, event: GatewayDispatchPayload, shardId: number) => {
     if (event.t === GatewayDispatchEvents.Ready) {
         console.info(`[Shard ${shardId}] ${event.d.user.username}#${event.d.user.discriminator} is ready!`);
@@ -93,7 +108,12 @@ const dispatchEvent = async (id: number, event: GatewayDispatchPayload, shardId:
     // only send events from one ws manager - checking manually is safer than assuming listener is 100% destroyed
     if (reshardedId !== id) return;
 
+    // Increment the event count
+    const eventCount = events.get(event.t) || 0;
+    events.set(event.t, eventCount + 1);
+
     if (await shouldBroadcastEvent(event)) {
+        broadcastEventCount++;
         // interactions are more important that we respond on time
         if (event.t === GatewayDispatchEvents.InteractionCreate) {
             redis.rpush("discord_events:priority", JSON.stringify(event));
