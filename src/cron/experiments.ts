@@ -175,6 +175,10 @@ const cron: Cron = {
                     try {
                         await Bun.sleep(1_000);
                         await channelWarmerExperiment(api, config.guild_id, channelId, webhook);
+
+                        Bun.sleep(5_000).then(() => deleteChannelWarmerMessages(api, channelId, webhook)).then(deletedCount => {
+                            if (deletedCount > 0) console.log(`Channel warmer experiment execution manually deleted ${deletedCount} messages (somehow)`);
+                        });
                     } catch (err) {
                         const discordErrorCode = err instanceof DiscordAPIError ? err.code : null;
                         if (discordErrorCode === RESTJSONErrorCodes.UnknownChannel) {
@@ -187,7 +191,7 @@ const cron: Cron = {
                         } else if (discordErrorCode === RESTJSONErrorCodes.MissingAccess || discordErrorCode === RESTJSONErrorCodes.MissingPermissions) {
                             console.log(styleText("dim", `Channel warmer experiment execution failed: ${err}`));
                             // todo count these and if like 10 in 10 days (due to using expire on hincr in redis), then just remove the experiment from guild)
-                        } else if (`${err}` === "TimeoutError: The operation timed out." || `${err}` === "HTTPError: Gateway Timeout") {
+                        } else if (`${err}` === "TimeoutError: The operation timed out." || `${err}`.includes("Gateway Timeout")) {
                             // could be a transient error that somehow kept the message present, so really ensure it isn't anymore
                             Bun.sleep(5_000).then(() => deleteChannelWarmerMessages(api, channelId, webhook)).then(deletedCount => {
                                 if (deletedCount > 0) console.log(`Channel warmer experiment execution manually deleted ${deletedCount} messages`);
