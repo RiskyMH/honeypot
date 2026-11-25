@@ -5,14 +5,11 @@ import randomChannelNames from "../utils/random-channel-names.yaml";
 import { CUSTOM_EMOJI } from "../utils/constants";
 import type { Cron } from "./crons";
 import { DiscordAPIError } from "@discordjs/rest";
+import { calculateShardId } from "@discordjs/util";
 import { styleText } from "node:util";
 import type { HoneypotConfig, HoneypotWebhook } from "../utils/db";
 import { honeypotWarningMessage } from "../utils/messages";
 import { removeGuildSubscribedChannelCache, setSubscribedChannelCache } from "../utils/cache";
-
-function shardId(id: string, total: number): number {
-    return Number((BigInt(id) >> 22n) % BigInt(total));
-}
 
 // Cron fires at :01, :16, :31, :46 UTC — map wall-clock to most recent past slot.
 function currentShardUTC(now = new Date()): number {
@@ -169,7 +166,7 @@ const cron: Cron = {
         const channelWarmer = async () => {
             const guilds = await db.getGuildsWithExperiment("channel-warmer");
             for (const config of randomSort(guilds)) {
-                if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
+                if (calculateShardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
                 const webhooks = await db.getWebhooks(config.guild_id)
@@ -230,7 +227,7 @@ const cron: Cron = {
         const randomChannelName = async () => {
             const guilds = await db.getGuildsWithExperiment("random-channel-name");
             for (const config of randomSort(guilds)) {
-                if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
+                if (calculateShardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 if (config.experiments.includes("recreate-channel")) continue; // we are making it again so no need to change anything here
                 const channels = await db.getChannels(config.guild_id);
                 for (const { channel_id: channelId } of channels) {
@@ -283,7 +280,7 @@ const cron: Cron = {
         const channelRecreate = async () => {
             const guilds = await db.getGuildsWithExperiment("recreate-channel");
             for (const config of randomSort(guilds)) {
-                if (shardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
+                if (calculateShardId(config.guild_id, TOTAL_SHARDS) !== currentShard) continue;
                 const channels = await db.getChannels(config.guild_id);
                 const existingMessages = await db.getHoneypotMessages(config.guild_id);
                 for (const channel of channels) {
