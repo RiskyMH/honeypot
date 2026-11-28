@@ -371,6 +371,10 @@ async function maybeDmMember(
 ) {
     try {
         if (config.experiments.includes("no-dm")) return null;
+        if (errorfulChannels.has(channelId)) {
+            console.log(styleText("dim", "Skipping dm as it has previously failed for this user"));
+            return;
+        }
 
         if (!dmRateLimiter.tryAcquire()) {
             console.log(styleText("dim", "Self imposed DM ratelimit reached, skipping DM to user"));
@@ -404,6 +408,8 @@ async function maybeDmMember(
             console.log(styleText("dim", `Failed to send DM to user: ${err}`));
         } else if (err instanceof DiscordAPIError && (err.code === RESTJSONErrorCodes.CannotSendMessagesToThisUser || err.code === RESTJSONErrorCodes.CannotSendMessagesToThisUserDueToHavingNoMutualGuilds)) {
             console.log(styleText("dim", `Failed to send DM to user: ${err}`));
+            errorfulChannels.add(channelId);
+            reduceSetSize(errorfulChannels, 75);
         } else {
             console.log(`Failed to send DM to user: ${err}`)
         }
@@ -496,7 +502,7 @@ async function logMessage(
 
             if (err.code == RESTJSONErrorCodes.UnknownChannel || err.code == RESTJSONErrorCodes.MissingAccess || err.code == RESTJSONErrorCodes.MissingPermissions) {
                 errorfulChannels.add(config.log_channel_id || matchedChannel.channel_id);
-                reduceSetSize(errorfulChannels, 50);
+                reduceSetSize(errorfulChannels, 75);
             }
         } else console.log(`Failed to send log message (MessageCreate handler): ${err}`);
     }
